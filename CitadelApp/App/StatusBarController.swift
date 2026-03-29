@@ -10,7 +10,7 @@ import CitadelCore
 ///
 /// Call `refresh()` whenever the vault lock state or entry list changes.
 @MainActor
-final class StatusBarController {
+final class StatusBarController: NSObject {
 
     private var statusItem: NSStatusItem?
     private weak var appState: AppState?
@@ -20,6 +20,7 @@ final class StatusBarController {
 
     init(appState: AppState) {
         self.appState = appState
+        super.init()
         setupStatusItem()
     }
 

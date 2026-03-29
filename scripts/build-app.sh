@@ -23,7 +23,7 @@ mkdir -p "$APP/Contents/MacOS"
 mkdir -p "$APP/Contents/Resources"
 
 # Copy binary
-cp "$ROOT/CitadelApp/.build/release/Citadel" "$APP/Contents/MacOS/"
+cp "$ROOT/CitadelApp/.build/arm64-apple-macosx/release/Citadel" "$APP/Contents/MacOS/"
 
 # Copy Info.plist
 cp "$ROOT/CitadelApp/Info.plist" "$APP/Contents/"

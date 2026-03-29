@@ -96,8 +96,12 @@ final class AppState {
         biometricAvailable = biometricManager.isAvailable
         biometricEnrolled = biometricManager.isEnabled
 
-        // Menu bar icon
-        statusBar = StatusBarController(appState: self)
+        // Menu bar icon — deferred until the app's window server connection is ready.
+        // Creating NSStatusItem during init() crashes because CGSConnection isn't established yet.
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.statusBar = StatusBarController(appState: self)
+        }
     }
 
     /// Sync tracked biometric properties from BiometricManager.
