@@ -1,0 +1,26 @@
+[package]
+name = "citadel-core"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "citadel_core"
+crate-type = ["lib", "staticlib"]
+
+[dependencies]
+keepass = { version = "0.10", features = ["save_kdbx4"] }
+rust-argon2 = "3"
+chrono = "0.4"
+zeroize = { version = "1", features = ["zeroize_derive"] }
+uuid = { version = "1", features = ["v4"] }
+rand = "0.9"
+libc = "0.2"
+
+[build-dependencies]
+cbindgen = "0.29"
+
+[profile.release]
+panic = "abort"
+
+[dev-dependencies]
+tempfile = "3"

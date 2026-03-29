@@ -1,0 +1,38 @@
+# Rust
+target/
+
+# Swift
+.build/
+.swiftpm/
+
+# Build artifacts
+*.o
+*.a
+*.dylib
+
+# macOS
+.DS_Store
+
+# Vault files (never commit real vaults)
+vault.kdbx
+vault.kdbx.*
+*.prev
+*.prev2
+*.prev3
+*.tmp
+
+# Test-generated vault files
+test-output.kdbx
+test-modified.kdbx
+
+# Audit logs
+audit-bundle.txt
+audit-swift.txt
+audit-final.txt
+
+# Fuzz corpus and artifacts
+fuzz/corpus/
+fuzz/artifacts/
+
+# Debug tools
+check_at
