@@ -70,20 +70,32 @@ public final class BiometricManager {
     /// Enroll Touch ID: verify biometrics, then store the encrypted master password.
     /// Call this after the user has already authenticated with their master password.
     public func enroll(password: Data) async throws {
+        print("BIO: Starting enrollment")
+
         // 1. Verify biometric availability
         let context = LAContext()
         var error: NSError?
         guard context.canEvaluatePolicy(.deviceOwnerAuthenticationWithBiometrics, error: &error) else {
+            print("BIO ERROR: Biometric not available: \(error?.localizedDescription ?? "unknown")")
             Self.logger.error("Biometric not available for enrollment: \(error?.localizedDescription ?? "unknown", privacy: .public)")
             throw BiometricError.notAvailable
         }
 
         // 2. Evaluate biometrics (Touch ID prompt)
-        let success = try await context.evaluatePolicy(
-            .deviceOwnerAuthenticationWithBiometrics,
-            localizedReason: "Enable Touch ID for Citadel"
-        )
-        guard success else { throw BiometricError.authFailed }
+        do {
+            let success = try await context.evaluatePolicy(
+                .deviceOwnerAuthenticationWithBiometrics,
+                localizedReason: "Enable Touch ID for Citadel"
+            )
+            print("BIO: LAContext auth result: \(success), error: nil")
+            guard success else {
+                print("BIO ERROR: Auth returned false")
+                throw BiometricError.authFailed
+            }
+        } catch let authError where !(authError is BiometricError) {
+            print("BIO ERROR: LAContext auth threw: \(authError)")
+            throw authError
+        }
 
         // 3. Generate random nonce (32 bytes)
         var nonce = Data(count: 32)
@@ -91,70 +103,107 @@ public final class BiometricManager {
             SecRandomCopyBytes(kSecRandomDefault, 32, ptr.baseAddress!)
         }
         guard status == errSecSuccess else {
+            print("BIO ERROR: SecRandomCopyBytes failed: \(status)")
             Self.logger.error("SecRandomCopyBytes failed: \(status)")
             throw BiometricError.storageError
         }
+        print("BIO: Nonce generated: \(nonce.count) bytes")
 
         // 4. Derive wrapping key: SHA-256(nonce + device ID)
         let wrappingKey = Self.deriveWrappingKey(nonce: nonce)
+        print("BIO: Key derived: \(wrappingKey.count) bytes")
 
         // 5. Encrypt password with wrapping key
         let encryptedBlob = Self.xorEncrypt(data: password, key: wrappingKey)
+        print("BIO: Encrypted blob: \(encryptedBlob.count) bytes")
 
         // 6. Remove old enrollment files
         unenroll()
 
         // 7. Write nonce file (permissions 0600)
         let fm = FileManager.default
+        print("BIO: Writing nonce to \(noncePath)")
         guard fm.createFile(atPath: noncePath, contents: nonce, attributes: [.posixPermissions: 0o600]) else {
+            print("BIO ERROR: Failed to write nonce file")
             Self.logger.error("Failed to write nonce file at \(self.noncePath, privacy: .public)")
             throw BiometricError.storageError
         }
 
         // 8. Write encrypted blob (permissions 0600)
+        print("BIO: Writing blob to \(encryptedBlobPath)")
         guard fm.createFile(atPath: encryptedBlobPath, contents: encryptedBlob, attributes: [.posixPermissions: 0o600]) else {
+            print("BIO ERROR: Failed to write blob file")
             Self.logger.error("Failed to write blob file at \(self.encryptedBlobPath, privacy: .public)")
             try? fm.removeItem(atPath: noncePath)
             throw BiometricError.storageError
         }
 
+        print("BIO: Write success: nonce=\(fm.fileExists(atPath: noncePath)), blob=\(fm.fileExists(atPath: encryptedBlobPath))")
+
         recordFullAuth()
         Self.logger.info("Touch ID enrolled successfully (file-based, isEnabled=\(self.isEnabled))")
+        print("BIO: Enrollment complete (isEnabled=\(isEnabled))")
     }
 
     // MARK: - Unlock
 
     /// Attempt biometric unlock. Returns the decrypted master password on success.
     public func unlock() async throws -> Data {
-        guard isEnabled else { throw BiometricError.notEnrolled }
-        guard !requiresFullAuth else { throw BiometricError.fullAuthRequired }
+        print("BIO: Starting unlock (isEnabled=\(isEnabled), requiresFullAuth=\(requiresFullAuth))")
+        guard isEnabled else {
+            print("BIO ERROR: Not enrolled")
+            throw BiometricError.notEnrolled
+        }
+        guard !requiresFullAuth else {
+            print("BIO ERROR: Full auth required (72h expired)")
+            throw BiometricError.fullAuthRequired
+        }
 
         // 1. Authenticate with Touch ID
         let context = LAContext()
-        let success = try await context.evaluatePolicy(
-            .deviceOwnerAuthenticationWithBiometrics,
-            localizedReason: "Unlock Citadel"
-        )
-        guard success else { throw BiometricError.authFailed }
+        print("BIO: Requesting Touch ID authentication")
+        do {
+            let success = try await context.evaluatePolicy(
+                .deviceOwnerAuthenticationWithBiometrics,
+                localizedReason: "Unlock Citadel"
+            )
+            print("BIO: LAContext auth result: \(success), error: nil")
+            guard success else {
+                print("BIO ERROR: Auth returned false")
+                throw BiometricError.authFailed
+            }
+        } catch let authError where !(authError is BiometricError) {
+            print("BIO ERROR: LAContext auth threw: \(authError)")
+            throw authError
+        }
 
         // 2. Read nonce from file
         let fm = FileManager.default
+        print("BIO: Reading nonce from \(noncePath)")
         guard let nonce = fm.contents(atPath: noncePath), nonce.count == 32 else {
+            print("BIO ERROR: Nonce file missing or invalid — unenrolling")
             Self.logger.error("Nonce file missing or invalid — unenrolling")
             unenroll()
             throw BiometricError.notEnrolled
         }
+        print("BIO: Nonce read: \(nonce.count) bytes")
 
         // 3. Read encrypted blob from file
+        print("BIO: Reading blob from \(encryptedBlobPath)")
         guard let encryptedBlob = fm.contents(atPath: encryptedBlobPath), !encryptedBlob.isEmpty else {
+            print("BIO ERROR: Blob file missing or invalid — unenrolling")
             Self.logger.error("Blob file missing or invalid — unenrolling")
             unenroll()
             throw BiometricError.notEnrolled
         }
+        print("BIO: Blob read: \(encryptedBlob.count) bytes")
 
         // 4. Derive wrapping key and decrypt
         let wrappingKey = Self.deriveWrappingKey(nonce: nonce)
+        print("BIO: Key derived: \(wrappingKey.count) bytes")
         let password = Self.xorEncrypt(data: encryptedBlob, key: wrappingKey)
+        print("BIO: Password decrypted: \(password.count) bytes")
+        print("BIO: Unlock complete")
         return password
     }
 

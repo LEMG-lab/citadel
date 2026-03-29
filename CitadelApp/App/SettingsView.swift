@@ -18,6 +18,7 @@ struct SettingsView: View {
     @State private var recycleBinMessage: String?
     @State private var dataResultMessage: String?
     @State private var showingDataResult = false
+    @State private var biometricMessage: String?
 
     var body: some View {
         @Bindable var appState = appState
@@ -112,10 +113,36 @@ struct SettingsView: View {
                 }
             }
             settingsRow(icon: "touchid", iconColor: .pink) {
-                HStack {
-                    Text("Touch ID").font(.system(size: 13))
-                    Spacer()
-                    Text("Coming in v1.4").font(.system(size: 12)).foregroundStyle(Color.citadelSecondary)
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack {
+                        Text("Touch ID").font(.system(size: 13))
+                        Spacer()
+                        if appState.wrappedValue.biometricAvailable {
+                            Toggle("", isOn: Binding(
+                                get: { appState.wrappedValue.biometricEnrolled },
+                                set: { newValue in
+                                    if newValue {
+                                        enrollBiometric()
+                                    } else {
+                                        unenrollBiometric()
+                                    }
+                                }
+                            ))
+                            .labelsHidden()
+                            .toggleStyle(.switch)
+                        } else {
+                            Text("Not available").font(.system(size: 12)).foregroundStyle(Color.citadelSecondary)
+                        }
+                    }
+                    if appState.wrappedValue.biometricEnrolled {
+                        Text("Unlock with Touch ID. Full password required every 72 hours.")
+                            .font(.system(size: 11))
+                            .foregroundStyle(Color.citadelSecondary)
+                    }
+                    if let msg = biometricMessage {
+                        Text(msg).font(.system(size: 11))
+                            .foregroundStyle(msg.contains("failed") ? Color.citadelDanger : Color.citadelSuccess)
+                    }
                 }
             }
         }
@@ -328,5 +355,29 @@ struct SettingsView: View {
             dataResultMessage = "Import failed."
         }
         showingDataResult = true
+    }
+
+    private func enrollBiometric() {
+        biometricMessage = nil
+        guard let password = appState.currentPasswordForBiometric else {
+            biometricMessage = "Enrollment failed: vault not unlocked."
+            return
+        }
+        Task {
+            do {
+                try await appState.biometricManager.enroll(password: password)
+                appState.refreshBiometricState()
+                biometricMessage = "Touch ID enabled."
+            } catch {
+                appState.refreshBiometricState()
+                biometricMessage = "Enrollment failed: \(error.localizedDescription)"
+            }
+        }
+    }
+
+    private func unenrollBiometric() {
+        appState.biometricManager.unenroll()
+        appState.refreshBiometricState()
+        biometricMessage = nil
     }
 }

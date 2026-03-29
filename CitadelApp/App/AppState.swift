@@ -74,7 +74,6 @@ final class AppState {
         vaultPath = dir.appendingPathComponent("vault.kdbx").path
         auditLogger = AuditLogger(vaultDirectory: dir.path)
         biometricManager = BiometricManager(directory: dir.path)
-        biometricManager.unenroll()
 
         // Prevent Spotlight from indexing the vault directory
         let noIndex = dir.appendingPathComponent(".metadata_never_index")
@@ -210,6 +209,15 @@ final class AppState {
         auditLogger.log(.unlock)
         checkExpiredEntries()
         statusBar?.refresh()
+    }
+
+    /// Unlock using Touch ID — retrieves decrypted password from BiometricManager.
+    func unlockWithBiometrics() async throws {
+        print("BIO UNLOCK: Starting biometric unlock flow")
+        let password = try await biometricManager.unlock()
+        print("BIO UNLOCK: Got password (\(password.count) bytes), opening vault")
+        try await unlockAsync(password: password, keyfilePath: currentKeyfilePath)
+        print("BIO UNLOCK: Vault opened successfully")
     }
 
     func createVault(password: Data, keyfilePath: String? = nil) throws {

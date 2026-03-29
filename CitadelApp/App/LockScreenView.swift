@@ -12,6 +12,7 @@ struct LockScreenView: View {
     @State private var showCreateConfirmation = false
     @State private var errorMessage: String?
     @State private var keyfilePath: String?
+    @State private var biometricAttempted = false
     @FocusState private var focusedField: Field?
 
     private enum Field: Hashable {
@@ -125,6 +126,30 @@ struct LockScreenView: View {
         .keyboardShortcut(.defaultAction)
         .disabled(password.isEmpty || appState.isLoading)
         .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+
+        if appState.biometricEnrolled && appState.vaultExists {
+            Button(action: unlockWithBiometrics) {
+                HStack(spacing: 8) {
+                    Image(systemName: "touchid")
+                        .font(.system(size: 22))
+                    Text("Unlock with Touch ID")
+                        .font(.system(size: 13, weight: .medium))
+                }
+                .foregroundStyle(Color.citadelAccent)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 6)
+            }
+            .buttonStyle(.plain)
+            .disabled(appState.isLoading)
+            .onAppear {
+                if !biometricAttempted {
+                    biometricAttempted = true
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                        unlockWithBiometrics()
+                    }
+                }
+            }
+        }
 
         if !appState.vaultExists {
             Divider()
@@ -270,6 +295,20 @@ struct LockScreenView: View {
                 try await appState.unlockAsync(password: pw, keyfilePath: kf)
             } catch {
                 errorMessage = "Could not open vault"
+            }
+        }
+    }
+
+    private func unlockWithBiometrics() {
+        print("BIO UNLOCK: Touch ID button tapped")
+        errorMessage = nil
+        Task {
+            do {
+                try await appState.unlockWithBiometrics()
+                print("BIO UNLOCK: Success — vault is open")
+            } catch {
+                print("BIO UNLOCK: Failed — \(error)")
+                errorMessage = "Touch ID failed \u{2014} enter password manually"
             }
         }
     }
