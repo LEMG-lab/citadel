@@ -17,4 +17,5 @@ public struct VaultEntryDetail: Sendable {
     public let password: Data
     public let url: String
     public let notes: String
+    public let otpURI: String
 }

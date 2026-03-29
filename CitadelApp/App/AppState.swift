@@ -27,6 +27,9 @@ final class AppState {
     /// True when the vault directory appears to be inside a cloud-synced folder.
     var cloudSyncWarning: String?
 
+    /// True while a long-running vault operation (open/create/save) is in progress.
+    var isLoading = false
+
     // MARK: - Non-observable infrastructure
 
     let engine = VaultEngine()
@@ -35,6 +38,10 @@ final class AppState {
     @ObservationIgnored private var currentPassword: Data?
     @ObservationIgnored private var currentKeyfilePath: String?
     let auditLogger: AuditLogger
+    let biometricManager = BiometricManager()
+
+    /// Password accessor for biometric enrollment (read-only copy).
+    var currentPasswordForBiometric: Data? { currentPassword }
 
     /// Canonical vault file path.
     let vaultPath: String
@@ -149,12 +156,51 @@ final class AppState {
         isLocked = false
         errorMessage = nil
         autoLockManager?.start()
+        biometricManager.recordFullAuth()
+        auditLogger.log(.unlock)
+    }
+
+    /// Async unlock — runs Argon2id off the main thread.
+    func unlockAsync(password: Data, keyfilePath: String? = nil) async throws {
+        isLoading = true
+        defer { isLoading = false }
+        let path = vaultPath
+        let eng = engine
+        try await Task.detached {
+            try eng.open(path: path, password: password, keyfilePath: keyfilePath)
+        }.value
+        currentPassword = password
+        currentKeyfilePath = keyfilePath
+        entries = try engine.listEntries()
+        isLocked = false
+        errorMessage = nil
+        autoLockManager?.start()
+        biometricManager.recordFullAuth()
         auditLogger.log(.unlock)
     }
 
     func createVault(password: Data, keyfilePath: String? = nil) throws {
         try engine.create(password: password, keyfilePath: keyfilePath)
         try VaultPersistence.atomicSave(engine: engine, vaultPath: vaultPath, password: password, keyfilePath: keyfilePath)
+        currentPassword = password
+        currentKeyfilePath = keyfilePath
+        entries = try engine.listEntries()
+        isLocked = false
+        errorMessage = nil
+        autoLockManager?.start()
+        auditLogger.log(.createVault)
+    }
+
+    /// Async create — runs Argon2id off the main thread.
+    func createVaultAsync(password: Data, keyfilePath: String? = nil) async throws {
+        isLoading = true
+        defer { isLoading = false }
+        let eng = engine
+        let path = vaultPath
+        try await Task.detached {
+            try eng.create(password: password, keyfilePath: keyfilePath)
+            try VaultPersistence.atomicSave(engine: eng, vaultPath: path, password: password, keyfilePath: keyfilePath)
+        }.value
         currentPassword = password
         currentKeyfilePath = keyfilePath
         entries = try engine.listEntries()
@@ -238,6 +284,7 @@ final class AppState {
 
         self.currentPassword = newPassword
         self.currentKeyfilePath = newKeyfilePath
+        biometricManager.unenroll()
         auditLogger.log(.changePassword)
 
         // Password change succeeded — delete the auto-backup that was encrypted
@@ -246,6 +293,14 @@ final class AppState {
         let fm = FileManager.default
         try? fm.removeItem(at: backupURL)
         try? fm.removeItem(at: backupURL.appendingPathExtension("sha256"))
+    }
+
+    // MARK: - KDF
+
+    func applyKdfPreset(_ preset: KdfPreset) throws {
+        try engine.setKdfParams(memory: preset.memory, iterations: preset.iterations, parallelism: preset.parallelism)
+        try save()
+        preset.save()
     }
 
     // MARK: - Import

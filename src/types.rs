@@ -42,6 +42,7 @@ pub struct CEntryData {
     pub password_len: u32,
     pub url: *mut c_char,
     pub notes: *mut c_char,
+    pub otp_uri: *mut c_char,
 }
 
 /// Bitmask flags for password character sets.

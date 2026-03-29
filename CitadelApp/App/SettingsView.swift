@@ -9,6 +9,11 @@ struct SettingsView: View {
     @State private var showingPasswordChange = false
     @State private var showingRecoverySheet = false
     @State private var showingAuditLog = false
+    @State private var touchIDError: String?
+    @State private var enrollingTouchID = false
+    @State private var selectedKdfPreset: KdfPreset = .saved
+    @State private var showingKdfConfirmation = false
+    @State private var kdfMessage: String?
 
     var body: some View {
         @Bindable var appState = appState
@@ -32,6 +37,32 @@ struct SettingsView: View {
                             .foregroundStyle(.secondary)
                     }
                     Slider(value: $appState.clipboardClearTime, in: 5...60, step: 5)
+
+                    if appState.biometricManager.isAvailable {
+                        Toggle("Unlock with Touch ID", isOn: Binding(
+                            get: { appState.biometricManager.isEnabled },
+                            set: { newValue in
+                                if newValue {
+                                    enrollTouchID()
+                                } else {
+                                    appState.biometricManager.unenroll()
+                                }
+                            }
+                        ))
+                        .disabled(enrollingTouchID)
+
+                        if appState.biometricManager.isEnabled {
+                            Text("Full password re-entry required every 72 hours.")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+
+                        if let err = touchIDError {
+                            Text(err)
+                                .font(.caption)
+                                .foregroundStyle(.red)
+                        }
+                    }
                 }
 
                 Section("Vault") {
@@ -44,6 +75,23 @@ struct SettingsView: View {
                     }
                     Button("Change Master Password") {
                         showingPasswordChange = true
+                    }
+
+                    Picker("KDF Strength", selection: $selectedKdfPreset) {
+                        ForEach(KdfPreset.allCases) { preset in
+                            Text(preset.label).tag(preset)
+                        }
+                    }
+                    .onChange(of: selectedKdfPreset) { _, newValue in
+                        if newValue != .saved {
+                            showingKdfConfirmation = true
+                        }
+                    }
+
+                    if let msg = kdfMessage {
+                        Text(msg)
+                            .font(.caption)
+                            .foregroundStyle(msg.contains("failed") ? .red : .green)
                     }
                 }
 
@@ -80,6 +128,50 @@ struct SettingsView: View {
         }
         .sheet(isPresented: $showingAuditLog) {
             AuditLogView()
+        }
+        .confirmationDialog(
+            "Change KDF Strength",
+            isPresented: $showingKdfConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("Re-encrypt Vault") { applyKdfChange() }
+            Button("Cancel", role: .cancel) {
+                selectedKdfPreset = .saved
+            }
+        } message: {
+            Text("This will re-encrypt your vault with \(selectedKdfPreset.label) KDF parameters. This may take a moment.")
+        }
+    }
+
+    private func applyKdfChange() {
+        do {
+            try appState.applyKdfPreset(selectedKdfPreset)
+            kdfMessage = "KDF updated to \(selectedKdfPreset.label)."
+        } catch {
+            kdfMessage = "KDF change failed."
+            selectedKdfPreset = .saved
+        }
+    }
+
+    private func enrollTouchID() {
+        enrollingTouchID = true
+        touchIDError = nil
+        Task {
+            do {
+                guard let pw = appState.currentPasswordForBiometric else {
+                    touchIDError = "Password not available. Lock and unlock first."
+                    enrollingTouchID = false
+                    return
+                }
+                try await appState.biometricManager.enroll(password: pw)
+            } catch BiometricError.notAvailable {
+                touchIDError = "Touch ID is not available on this device."
+            } catch BiometricError.authFailed {
+                touchIDError = "Touch ID verification failed."
+            } catch {
+                touchIDError = "Could not enable Touch ID."
+            }
+            enrollingTouchID = false
         }
     }
 }

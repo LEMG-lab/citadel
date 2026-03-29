@@ -127,6 +127,15 @@ public final class VaultEngine: @unchecked Sendable {
         try check(result)
     }
 
+    /// Update the KDF parameters on the open vault. Takes effect on next save.
+    public func setKdfParams(memory: UInt64, iterations: UInt64, parallelism: UInt32) throws {
+        lock.lock()
+        defer { lock.unlock() }
+        let h = try _requireHandle()
+        let result = vault_set_kdf_params(h, memory, iterations, parallelism)
+        try check(result)
+    }
+
     // MARK: - Entry Operations
 
     /// List all entries (no passwords).
@@ -185,7 +194,8 @@ public final class VaultEngine: @unchecked Sendable {
             username: cString(entry.username),
             password: passwordData,
             url: cString(entry.url),
-            notes: cString(entry.notes)
+            notes: cString(entry.notes),
+            otpURI: cString(entry.otp_uri)
         )
     }
 
@@ -195,7 +205,8 @@ public final class VaultEngine: @unchecked Sendable {
         username: String,
         password: Data,
         url: String,
-        notes: String
+        notes: String,
+        otpURI: String = ""
     ) throws -> String {
         try Self.validateFFIString(title, field: "title")
         try Self.validateFFIString(username, field: "username")
@@ -210,13 +221,15 @@ public final class VaultEngine: @unchecked Sendable {
             username.withCString { cUser in
                 url.withCString { cUrl in
                     notes.withCString { cNotes in
-                        password.withUnsafeBytes { buf -> VaultResult in
-                            let ptr = buf.baseAddress?.assumingMemoryBound(to: UInt8.self)
-                            return vault_add_entry(
-                                h, cTitle, cUser,
-                                ptr, UInt32(password.count),
-                                cUrl, cNotes, &uuidPtr
-                            )
+                        otpURI.withCString { cOtp in
+                            password.withUnsafeBytes { buf -> VaultResult in
+                                let ptr = buf.baseAddress?.assumingMemoryBound(to: UInt8.self)
+                                return vault_add_entry(
+                                    h, cTitle, cUser,
+                                    ptr, UInt32(password.count),
+                                    cUrl, cNotes, cOtp, &uuidPtr
+                                )
+                            }
                         }
                     }
                 }
@@ -239,7 +252,8 @@ public final class VaultEngine: @unchecked Sendable {
         username: String,
         password: Data,
         url: String,
-        notes: String
+        notes: String,
+        otpURI: String = ""
     ) throws {
         try Self.validateFFIString(uuid, field: "uuid")
         try Self.validateFFIString(title, field: "title")
@@ -254,13 +268,15 @@ public final class VaultEngine: @unchecked Sendable {
                 username.withCString { cUser in
                     url.withCString { cUrl in
                         notes.withCString { cNotes in
-                            password.withUnsafeBytes { buf -> VaultResult in
-                                let ptr = buf.baseAddress?.assumingMemoryBound(to: UInt8.self)
-                                return vault_update_entry(
-                                    h, cUuid, cTitle, cUser,
-                                    ptr, UInt32(password.count),
-                                    cUrl, cNotes
-                                )
+                            otpURI.withCString { cOtp in
+                                password.withUnsafeBytes { buf -> VaultResult in
+                                    let ptr = buf.baseAddress?.assumingMemoryBound(to: UInt8.self)
+                                    return vault_update_entry(
+                                        h, cUuid, cTitle, cUser,
+                                        ptr, UInt32(password.count),
+                                        cUrl, cNotes, cOtp
+                                    )
+                                }
                             }
                         }
                     }

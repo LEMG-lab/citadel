@@ -11,6 +11,9 @@ struct EntryDetailView: View {
     @State private var showingEdit = false
     @State private var showingDeleteConfirmation = false
     @State private var errorMessage: String?
+    @State private var totpCode: String = ""
+    @State private var totpSecondsRemaining: Int = 0
+    @State private var totpTimer: Timer?
 
     var body: some View {
         Group {
@@ -86,6 +89,29 @@ struct EntryDetailView: View {
                     }
                 }
             }
+
+            if !entry.otpURI.isEmpty, TOTPGenerator(uri: entry.otpURI) != nil {
+                Section("Two-Factor Authentication") {
+                    LabeledContent("TOTP Code") {
+                        HStack {
+                            Text(totpCode)
+                                .font(.system(.title2, design: .monospaced))
+                                .textSelection(.enabled)
+                            Spacer()
+                            Text("\(totpSecondsRemaining)s")
+                                .monospacedDigit()
+                                .foregroundStyle(.secondary)
+                            Button("Copy", systemImage: "doc.on.doc") {
+                                appState.clipboard.copyPassword(Data(totpCode.utf8))
+                            }
+                            .buttonStyle(.borderless)
+                            .labelStyle(.iconOnly)
+                        }
+                    }
+                }
+                .onAppear { startTOTPTimer(uri: entry.otpURI) }
+                .onDisappear { stopTOTPTimer() }
+            }
         }
         .formStyle(.grouped)
         .toolbar {
@@ -133,6 +159,25 @@ struct EntryDetailView: View {
         let pb = NSPasteboard.general
         pb.clearContents()
         pb.setString(username, forType: .string)
+    }
+
+    private func startTOTPTimer(uri: String) {
+        stopTOTPTimer()
+        guard let gen = TOTPGenerator(uri: uri) else { return }
+        updateTOTP(gen)
+        totpTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { _ in
+            Task { @MainActor in updateTOTP(gen) }
+        }
+    }
+
+    private func stopTOTPTimer() {
+        totpTimer?.invalidate()
+        totpTimer = nil
+    }
+
+    private func updateTOTP(_ gen: TOTPGenerator) {
+        totpCode = gen.code()
+        totpSecondsRemaining = gen.secondsRemaining()
     }
 
     private func deleteEntry() {

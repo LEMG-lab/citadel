@@ -70,6 +70,7 @@ typedef struct CEntryData {
     uint32_t password_len;
     char *url;
     char *notes;
+    char *otp_uri;
 } CEntryData;
 
 /**
@@ -93,6 +94,26 @@ enum VaultResult vault_create(const uint8_t *password_ptr,
                               uint32_t password_len,
                               const char *keyfile_path,
                               void **handle_out);
+
+/**
+ * Create a vault with custom KDF parameters.
+ * kdf_memory is in bytes, kdf_iterations is the iteration count, kdf_parallelism is thread count.
+ */
+enum VaultResult vault_create_with_kdf(const uint8_t *password_ptr,
+                                       uint32_t password_len,
+                                       const char *keyfile_path,
+                                       uint64_t kdf_memory,
+                                       uint64_t kdf_iterations,
+                                       uint32_t kdf_parallelism,
+                                       void **handle_out);
+
+/**
+ * Update the KDF parameters on an open vault. Takes effect on next save.
+ */
+enum VaultResult vault_set_kdf_params(void *handle,
+                                      uint64_t kdf_memory,
+                                      uint64_t kdf_iterations,
+                                      uint32_t kdf_parallelism);
 
 enum VaultResult vault_save_to(void *handle, const char *path);
 
@@ -119,6 +140,7 @@ enum VaultResult vault_add_entry(void *handle,
                                  uint32_t password_len,
                                  const char *url,
                                  const char *notes,
+                                 const char *otp_uri,
                                  char **uuid_out);
 
 enum VaultResult vault_update_entry(void *handle,
@@ -128,7 +150,8 @@ enum VaultResult vault_update_entry(void *handle,
                                     const uint8_t *password_ptr,
                                     uint32_t password_len,
                                     const char *url,
-                                    const char *notes);
+                                    const char *notes,
+                                    const char *otp_uri);
 
 enum VaultResult vault_delete_entry(void *handle, const char *uuid_str);
 

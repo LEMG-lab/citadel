@@ -146,6 +146,7 @@ fn ffi_add_entry(
         password.len() as u32,
         c_url.as_ptr(),
         c_notes.as_ptr(),
+        ptr::null(),
         &mut uuid_ptr,
     );
     assert_eq!(result, VaultResult::Ok, "vault_add_entry failed for {}", title);

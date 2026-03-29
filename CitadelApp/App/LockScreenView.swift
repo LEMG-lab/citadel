@@ -1,5 +1,6 @@
 import SwiftUI
 import UniformTypeIdentifiers
+import CitadelCore
 
 /// Lock screen — master password entry and vault creation.
 struct LockScreenView: View {
@@ -11,6 +12,7 @@ struct LockScreenView: View {
     @State private var showCreateConfirmation = false
     @State private var errorMessage: String?
     @State private var keyfilePath: String?
+    @State private var attemptingBiometric = false
     @FocusState private var focusedField: Field?
 
     private enum Field: Hashable {
@@ -56,8 +58,14 @@ struct LockScreenView: View {
             .focused($focusedField, equals: .password)
             .onSubmit { unlock() }
             .onAppear { focusedField = .password }
+            .disabled(appState.isLoading)
 
         keyfileRow
+
+        if appState.isLoading {
+            ProgressView()
+                .controlSize(.small)
+        }
 
         if let msg = errorMessage {
             Text(msg)
@@ -68,7 +76,19 @@ struct LockScreenView: View {
         Button("Unlock") { unlock() }
             .buttonStyle(.borderedProminent)
             .keyboardShortcut(.defaultAction)
-            .disabled(password.isEmpty)
+            .disabled(password.isEmpty || appState.isLoading)
+
+        if appState.biometricManager.isEnabled
+            && appState.biometricManager.isAvailable
+            && !appState.biometricManager.requiresFullAuth
+            && appState.vaultExists {
+            Button {
+                attemptBiometricUnlock()
+            } label: {
+                Label("Unlock with Touch ID", systemImage: "touchid")
+            }
+            .disabled(attemptingBiometric)
+        }
 
         if !appState.vaultExists {
             Divider().frame(width: 200)
@@ -118,7 +138,7 @@ struct LockScreenView: View {
             Button("Create Vault") { requestCreate() }
                 .buttonStyle(.borderedProminent)
                 .keyboardShortcut(.defaultAction)
-                .disabled(password.isEmpty || confirmPassword.isEmpty)
+                .disabled(password.isEmpty || confirmPassword.isEmpty || appState.isLoading)
         }
     }
 
@@ -162,12 +182,33 @@ struct LockScreenView: View {
 
     private func unlock() {
         errorMessage = nil
-        do {
-            try appState.unlock(password: Data(password.utf8), keyfilePath: keyfilePath)
-            password = ""
-        } catch {
-            errorMessage = "Could not open vault"
-            password = ""
+        let pw = Data(password.utf8)
+        let kf = keyfilePath
+        password = ""
+        Task {
+            do {
+                try await appState.unlockAsync(password: pw, keyfilePath: kf)
+            } catch {
+                errorMessage = "Could not open vault"
+            }
+        }
+    }
+
+    private func attemptBiometricUnlock() {
+        attemptingBiometric = true
+        errorMessage = nil
+        Task {
+            do {
+                let pw = try await appState.biometricManager.unlock()
+                try await appState.unlockAsync(password: pw, keyfilePath: nil)
+            } catch BiometricError.authFailed {
+                errorMessage = "Touch ID failed"
+            } catch BiometricError.fullAuthRequired {
+                errorMessage = "Please enter your master password"
+            } catch {
+                errorMessage = "Could not open vault"
+            }
+            attemptingBiometric = false
         }
     }
 
@@ -201,14 +242,16 @@ struct LockScreenView: View {
     }
 
     private func doCreate() {
-        do {
-            try appState.createVault(password: Data(password.utf8), keyfilePath: keyfilePath)
-            password = ""
-            confirmPassword = ""
-        } catch {
-            errorMessage = "Could not create vault"
-            password = ""
-            confirmPassword = ""
+        let pw = Data(password.utf8)
+        let kf = keyfilePath
+        password = ""
+        confirmPassword = ""
+        Task {
+            do {
+                try await appState.createVaultAsync(password: pw, keyfilePath: kf)
+            } catch {
+                errorMessage = "Could not create vault"
+            }
         }
     }
 }

@@ -5,7 +5,7 @@ use zeroize::{Zeroize, Zeroizing};
 
 use crate::password;
 use crate::types::*;
-use crate::vault::VaultState;
+use crate::vault::{KdfParams, VaultState};
 
 // ---------------------------------------------------------------------------
 // Thread safety
@@ -120,6 +120,65 @@ pub extern "C" fn vault_create(
             }
             Err(e) => e,
         }
+    }));
+    result.unwrap_or(VaultResult::InternalError)
+}
+
+/// Create a vault with custom KDF parameters.
+/// kdf_memory is in bytes, kdf_iterations is the iteration count, kdf_parallelism is thread count.
+#[no_mangle]
+pub extern "C" fn vault_create_with_kdf(
+    password_ptr: *const u8,
+    password_len: u32,
+    keyfile_path: *const c_char,
+    kdf_memory: u64,
+    kdf_iterations: u64,
+    kdf_parallelism: u32,
+    handle_out: *mut *mut c_void,
+) -> VaultResult {
+    if handle_out.is_null() {
+        return VaultResult::InternalError;
+    }
+    crate::memory::disable_core_dumps();
+    let result = catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let pw = unsafe { read_password(password_ptr, password_len) };
+        let kf = if keyfile_path.is_null() {
+            None
+        } else {
+            let s = unsafe { cstr_to_str(keyfile_path) };
+            if s.is_empty() { None } else { Some(s) }
+        };
+        let kdf = KdfParams { memory: kdf_memory, iterations: kdf_iterations, parallelism: kdf_parallelism };
+        match VaultState::create_with_kdf(&pw, kf, kdf) {
+            Ok(state) => {
+                let boxed = Box::new(state);
+                unsafe {
+                    *handle_out = Box::into_raw(boxed) as *mut c_void;
+                }
+                VaultResult::Ok
+            }
+            Err(e) => e,
+        }
+    }));
+    result.unwrap_or(VaultResult::InternalError)
+}
+
+/// Update the KDF parameters on an open vault. Takes effect on next save.
+#[no_mangle]
+pub extern "C" fn vault_set_kdf_params(
+    handle: *mut c_void,
+    kdf_memory: u64,
+    kdf_iterations: u64,
+    kdf_parallelism: u32,
+) -> VaultResult {
+    if handle.is_null() {
+        return VaultResult::InternalError;
+    }
+    let result = catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let state = unsafe { &mut *(handle as *mut VaultState) };
+        let kdf = KdfParams { memory: kdf_memory, iterations: kdf_iterations, parallelism: kdf_parallelism };
+        state.set_kdf_params(kdf);
+        VaultResult::Ok
     }));
     result.unwrap_or(VaultResult::InternalError)
 }
@@ -289,6 +348,7 @@ pub extern "C" fn vault_get_entry(
                     password_len: pw_len,
                     url: str_to_c(&detail.url),
                     notes: str_to_c(&detail.notes),
+                    otp_uri: str_to_c(&detail.otp_uri),
                 });
                 unsafe {
                     *entry_out = Box::into_raw(data);
@@ -310,6 +370,7 @@ pub extern "C" fn vault_add_entry(
     password_len: u32,
     url: *const c_char,
     notes: *const c_char,
+    otp_uri: *const c_char,
     uuid_out: *mut *mut c_char,
 ) -> VaultResult {
     if handle.is_null() {
@@ -321,9 +382,10 @@ pub extern "C" fn vault_add_entry(
         let username_s = unsafe { cstr_to_str(username) };
         let url_s = unsafe { cstr_to_str(url) };
         let notes_s = unsafe { cstr_to_str(notes) };
+        let otp_s = unsafe { cstr_to_str(otp_uri) };
         let pw = unsafe { read_password(password_ptr, password_len) };
 
-        match state.add_entry(title_s, username_s, &pw, url_s, notes_s) {
+        match state.add_entry_with_otp(title_s, username_s, &pw, url_s, notes_s, otp_s) {
             Ok(uuid) => {
                 if !uuid_out.is_null() {
                     unsafe {
@@ -348,6 +410,7 @@ pub extern "C" fn vault_update_entry(
     password_len: u32,
     url: *const c_char,
     notes: *const c_char,
+    otp_uri: *const c_char,
 ) -> VaultResult {
     if handle.is_null() || uuid_str.is_null() {
         return VaultResult::InternalError;
@@ -363,9 +426,10 @@ pub extern "C" fn vault_update_entry(
         let username_s = unsafe { cstr_to_str(username) };
         let url_s = unsafe { cstr_to_str(url) };
         let notes_s = unsafe { cstr_to_str(notes) };
+        let otp_s = unsafe { cstr_to_str(otp_uri) };
         let pw = unsafe { read_password(password_ptr, password_len) };
 
-        match state.update_entry(uuid, title_s, username_s, &pw, url_s, notes_s) {
+        match state.update_entry_with_otp(uuid, title_s, username_s, &pw, url_s, notes_s, otp_s) {
             Ok(()) => VaultResult::Ok,
             Err(e) => e,
         }
@@ -492,5 +556,6 @@ pub extern "C" fn entry_data_free(data: *mut CEntryData) {
         free_c_string(data.username);
         free_c_string(data.url);
         free_c_string(data.notes);
+        free_c_string(data.otp_uri);
     }));
 }

@@ -19,6 +19,7 @@ struct EntryEditView: View {
     @State private var showPassword = false
     @State private var url = ""
     @State private var notes = ""
+    @State private var otpURI = ""
     @State private var showingGenerator = false
     @State private var errorMessage: String?
 
@@ -53,6 +54,8 @@ struct EntryEditView: View {
                     TextField("URL", text: $url)
                     TextField("Notes", text: $notes, axis: .vertical)
                         .lineLimit(3...8)
+                    TextField("TOTP URI (otpauth://...)", text: $otpURI)
+                        .font(.system(.body, design: .monospaced))
                 }
 
                 if let msg = errorMessage {
@@ -94,6 +97,7 @@ struct EntryEditView: View {
             password = String(decoding: entry.password, as: UTF8.self)
             url = entry.url
             notes = entry.notes
+            otpURI = entry.otpURI
         }
     }
 
@@ -105,7 +109,8 @@ struct EntryEditView: View {
             case .add:
                 let uuid = try appState.engine.addEntry(
                     title: title, username: username,
-                    password: pwData, url: url, notes: notes
+                    password: pwData, url: url, notes: notes,
+                    otpURI: otpURI
                 )
                 try appState.save()
                 try appState.refreshEntries()
@@ -113,7 +118,8 @@ struct EntryEditView: View {
             case .edit(let entry):
                 try appState.engine.updateEntry(
                     uuid: entry.uuid, title: title, username: username,
-                    password: pwData, url: url, notes: notes
+                    password: pwData, url: url, notes: notes,
+                    otpURI: otpURI
                 )
                 try appState.save()
                 try appState.refreshEntries()

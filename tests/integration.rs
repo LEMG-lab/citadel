@@ -165,6 +165,7 @@ fn full_crud_lifecycle() {
             entry_pw.len() as u32,
             url.as_ptr(),
             notes.as_ptr(),
+            ptr::null(),
             &mut uuid_ptr,
         ),
         VaultResult::Ok
@@ -215,6 +216,7 @@ fn full_crud_lifecycle() {
             new_pw.len() as u32,
             url.as_ptr(),
             notes.as_ptr(),
+            ptr::null(),
         ),
         VaultResult::Ok
     );

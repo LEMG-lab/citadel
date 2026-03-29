@@ -8,6 +8,24 @@ use zeroize::{Zeroize, Zeroizing};
 
 use crate::types::VaultResult;
 
+/// KDF configuration presets.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct KdfParams {
+    pub memory: u64,      // bytes
+    pub iterations: u64,
+    pub parallelism: u32,
+}
+
+impl Default for KdfParams {
+    fn default() -> Self {
+        KdfParams {
+            memory: 256 * 1024 * 1024, // 256 MB
+            iterations: 3,
+            parallelism: 4,
+        }
+    }
+}
+
 /// Internal vault state held behind an opaque FFI handle.
 #[derive(Debug)]
 pub struct VaultState {
@@ -68,6 +86,11 @@ impl VaultState {
 
     /// Create a new empty KDBX 4 vault with Argon2id / ChaCha20.
     pub fn create(password: &[u8], keyfile_path: Option<&str>) -> Result<Self, VaultResult> {
+        Self::create_with_kdf(password, keyfile_path, KdfParams::default())
+    }
+
+    /// Create a new empty KDBX 4 vault with custom KDF parameters.
+    pub fn create_with_kdf(password: &[u8], keyfile_path: Option<&str>, kdf: KdfParams) -> Result<Self, VaultResult> {
         if password.is_empty() {
             return Err(VaultResult::EmptyPassword);
         }
@@ -79,9 +102,9 @@ impl VaultState {
             compression_config: CompressionConfig::GZip,
             inner_cipher_config: InnerCipherConfig::ChaCha20,
             kdf_config: KdfConfig::Argon2id {
-                memory: 256 * 1024 * 1024, // 256 MB
-                iterations: 3,
-                parallelism: 4,
+                memory: kdf.memory,
+                iterations: kdf.iterations,
+                parallelism: kdf.parallelism,
                 version: argon2::Version::Version13,
             },
             public_custom_data: None,
@@ -160,6 +183,16 @@ impl VaultState {
         Ok(())
     }
 
+    /// Update the KDF parameters. Takes effect on next save.
+    pub fn set_kdf_params(&mut self, kdf: KdfParams) {
+        self.db.config.kdf_config = KdfConfig::Argon2id {
+            memory: kdf.memory,
+            iterations: kdf.iterations,
+            parallelism: kdf.parallelism,
+            version: argon2::Version::Version13,
+        };
+    }
+
     /// Change the stored password (and optionally keyfile). Takes effect on next save.
     pub fn change_password(&mut self, new_password: &[u8], new_keyfile: Option<&str>) -> Result<(), VaultResult> {
         if new_password.is_empty() {
@@ -196,6 +229,7 @@ impl VaultState {
             password: Zeroizing::new(entry.get_password().unwrap_or("").as_bytes().to_vec()),
             url: entry.get_url().unwrap_or("").to_string(),
             notes: entry.get("Notes").unwrap_or("").to_string(),
+            otp_uri: entry.get("otp").unwrap_or("").to_string(),
         })
     }
 
@@ -208,6 +242,19 @@ impl VaultState {
         url: &str,
         notes: &str,
     ) -> Result<uuid::Uuid, VaultResult> {
+        self.add_entry_with_otp(title, username, password, url, notes, "")
+    }
+
+    /// Add a new entry with optional OTP URI. Returns its UUID.
+    pub fn add_entry_with_otp(
+        &mut self,
+        title: &str,
+        username: &str,
+        password: &[u8],
+        url: &str,
+        notes: &str,
+        otp_uri: &str,
+    ) -> Result<uuid::Uuid, VaultResult> {
         let password_str =
             std::str::from_utf8(password).map_err(|_| VaultResult::InternalError)?;
         let mut entry = Entry::new();
@@ -219,6 +266,9 @@ impl VaultState {
         entry.set_protected("Password", password_str);
         entry.set_unprotected("URL", url);
         entry.set_unprotected("Notes", notes);
+        if !otp_uri.is_empty() {
+            entry.set_unprotected("otp", otp_uri);
+        }
         self.db.root.entries.push(entry);
         Ok(entry_uuid)
     }
@@ -233,6 +283,20 @@ impl VaultState {
         url: &str,
         notes: &str,
     ) -> Result<(), VaultResult> {
+        self.update_entry_with_otp(uuid, title, username, password, url, notes, "")
+    }
+
+    /// Update an existing entry with optional OTP URI.
+    pub fn update_entry_with_otp(
+        &mut self,
+        uuid: uuid::Uuid,
+        title: &str,
+        username: &str,
+        password: &[u8],
+        url: &str,
+        notes: &str,
+        otp_uri: &str,
+    ) -> Result<(), VaultResult> {
         let password_str =
             std::str::from_utf8(password).map_err(|_| VaultResult::InternalError)?;
         let entry = self
@@ -246,6 +310,12 @@ impl VaultState {
         entry.set_protected("Password", password_str);
         entry.set_unprotected("URL", url);
         entry.set_unprotected("Notes", notes);
+        if otp_uri.is_empty() {
+            // Remove the otp field if cleared
+            entry.fields.remove("otp");
+        } else {
+            entry.set_unprotected("otp", otp_uri);
+        }
         Ok(())
     }
 
@@ -277,6 +347,7 @@ pub struct EntryDetail {
     pub password: Zeroizing<Vec<u8>>,
     pub url: String,
     pub notes: String,
+    pub otp_uri: String,
 }
 
 fn collect_entries(group: &Group, out: &mut Vec<EntrySummary>) {
@@ -338,11 +409,20 @@ fn sanitize_for_keepassxc(db: &mut Database) {
         item.last_modification_time.get_or_insert(epoch);
     }
 
+    let max_history_items = m.history_max_items.unwrap_or(10) as usize;
+    let max_history_size = m.history_max_size.unwrap_or(6_291_456) as usize;
+
     // -- Groups (recursive) --
-    sanitize_group(&mut db.root, epoch, nil);
+    sanitize_group(&mut db.root, epoch, nil, max_history_items, max_history_size);
 }
 
-fn sanitize_group(group: &mut Group, epoch: chrono::NaiveDateTime, nil: uuid::Uuid) {
+fn sanitize_group(
+    group: &mut Group,
+    epoch: chrono::NaiveDateTime,
+    nil: uuid::Uuid,
+    max_history_items: usize,
+    max_history_size: usize,
+) {
     group.icon_id.get_or_insert(48);
     group.times.expiry.get_or_insert(epoch);
     group.enable_autotype.get_or_insert(true);
@@ -350,14 +430,19 @@ fn sanitize_group(group: &mut Group, epoch: chrono::NaiveDateTime, nil: uuid::Uu
     group.last_top_visible_entry.get_or_insert(nil);
 
     for entry in &mut group.entries {
-        sanitize_entry(entry, epoch);
+        sanitize_entry(entry, epoch, max_history_items, max_history_size);
     }
     for child in &mut group.groups {
-        sanitize_group(child, epoch, nil);
+        sanitize_group(child, epoch, nil, max_history_items, max_history_size);
     }
 }
 
-fn sanitize_entry(entry: &mut Entry, epoch: chrono::NaiveDateTime) {
+fn sanitize_entry(
+    entry: &mut Entry,
+    epoch: chrono::NaiveDateTime,
+    max_history_items: usize,
+    max_history_size: usize,
+) {
     entry.icon_id.get_or_insert(0);
     entry.times.expiry.get_or_insert(epoch);
     // keepass-rs serializes AutoType.DataTransferObfuscation as "True"/"False"
@@ -366,16 +451,41 @@ fn sanitize_entry(entry: &mut Entry, epoch: chrono::NaiveDateTime) {
     // DefaultSequence, and Associations.
     sanitize_autotype(&mut entry.autotype);
 
-    // Rebuild history with sanitized entries.  History only exposes
-    // get_entries() (immutable) so we take it, clone entries, fix them,
-    // and rebuild via add_entry().
+    // Rebuild history with sanitized entries, pruning to max_history_items
+    // and max_history_size.  History only exposes get_entries() (immutable)
+    // so we take it, clone entries, fix them, and rebuild via add_entry().
     if let Some(old_history) = entry.history.take() {
         let mut new_history = History::default();
+        let entries = old_history.get_entries().clone();
+        // Entries are ordered newest-first. Keep the most recent ones.
+        let mut kept = 0;
+        let mut total_size = 0usize;
         // add_entry() prepends, so iterate in reverse to preserve order.
-        for mut h_entry in old_history.get_entries().clone().into_iter().rev() {
+        // But we prune from the tail (oldest), so collect what to keep first.
+        let mut to_keep: Vec<Entry> = Vec::new();
+        for mut h_entry in entries.into_iter() {
+            if kept >= max_history_items {
+                break;
+            }
+            // Rough size estimate: sum of all string field values
+            let entry_size: usize = h_entry.fields.values().map(|v| {
+                match v {
+                    keepass::db::Value::Unprotected(s) => s.len(),
+                    keepass::db::Value::Protected(_) => 64, // rough estimate for protected values
+                }
+            }).sum();
+            if total_size + entry_size > max_history_size && kept > 0 {
+                break;
+            }
             h_entry.icon_id.get_or_insert(0);
             h_entry.times.expiry.get_or_insert(epoch);
             sanitize_autotype(&mut h_entry.autotype);
+            to_keep.push(h_entry);
+            kept += 1;
+            total_size += entry_size;
+        }
+        // add_entry() prepends, so add in reverse to preserve chronological order.
+        for h_entry in to_keep.into_iter().rev() {
             new_history.add_entry(h_entry);
         }
         entry.history = Some(new_history);
@@ -580,6 +690,87 @@ mod tests {
         assert!(titles.contains(&"B"));
     }
 
+    #[test]
+    fn history_pruning() {
+        let pw = b"history-test";
+        let mut state = VaultState::create(pw, None).unwrap();
+        let uuid = state.add_entry("Test", "user", b"pw0", "", "").unwrap();
+
+        // Update the entry 15 times to create history
+        for i in 1..=15 {
+            let new_pw = format!("pw{}", i);
+            state.update_entry(uuid, "Test", "user", new_pw.as_bytes(), "", "").unwrap();
+        }
+
+        let tmp = NamedTempFile::new().unwrap();
+        let path = tmp.path().to_str().unwrap();
+        state.save_to(path).unwrap();
+
+        let state2 = VaultState::open(path, pw, None).unwrap();
+        let entry = state2.db.root.entry_by_uuid(uuid).unwrap();
+        let history_count = entry.history.as_ref().map_or(0, |h| h.get_entries().len());
+        // Default max is 10
+        assert!(history_count <= 10, "history count {} > 10", history_count);
+        assert!(history_count > 0, "history should not be empty");
+    }
+
+    #[test]
+    fn otp_roundtrip() {
+        let pw = b"otp-test";
+        let otp = "otpauth://totp/Test:user@example.com?secret=JBSWY3DPEHPK3PXP&issuer=Test&period=30&digits=6&algorithm=SHA1";
+        let mut state = VaultState::create(pw, None).unwrap();
+        let uuid = state.add_entry_with_otp("OTP Test", "user", b"pw", "https://example.com", "", otp).unwrap();
+
+        let tmp = NamedTempFile::new().unwrap();
+        let path = tmp.path().to_str().unwrap();
+        state.save_to(path).unwrap();
+
+        let state2 = VaultState::open(path, pw, None).unwrap();
+        let detail = state2.get_entry(uuid).unwrap();
+        assert_eq!(detail.otp_uri, otp);
+    }
+
+    #[test]
+    fn create_with_kdf_standard() {
+        let pw = b"kdf-standard";
+        let kdf = KdfParams { memory: 256 * 1024 * 1024, iterations: 3, parallelism: 4 };
+        let mut state = VaultState::create_with_kdf(pw, None, kdf).unwrap();
+        state.add_entry("Test", "u", b"p", "", "").unwrap();
+        let tmp = NamedTempFile::new().unwrap();
+        let path = tmp.path().to_str().unwrap();
+        state.save_to(path).unwrap();
+        let state2 = VaultState::open(path, pw, None).unwrap();
+        assert_eq!(state2.list_entries().len(), 1);
+    }
+
+    #[test]
+    fn create_with_kdf_high() {
+        let pw = b"kdf-high";
+        let kdf = KdfParams { memory: 512 * 1024 * 1024, iterations: 5, parallelism: 4 };
+        let mut state = VaultState::create_with_kdf(pw, None, kdf).unwrap();
+        state.add_entry("Test", "u", b"p", "", "").unwrap();
+        let tmp = NamedTempFile::new().unwrap();
+        let path = tmp.path().to_str().unwrap();
+        state.save_to(path).unwrap();
+        let state2 = VaultState::open(path, pw, None).unwrap();
+        assert_eq!(state2.list_entries().len(), 1);
+    }
+
+    #[test]
+    fn set_kdf_params_and_reopen() {
+        let pw = b"kdf-set";
+        let mut state = VaultState::create(pw, None).unwrap();
+        state.add_entry("Test", "u", b"p", "", "").unwrap();
+        // Change KDF to High
+        state.set_kdf_params(KdfParams { memory: 512 * 1024 * 1024, iterations: 5, parallelism: 4 });
+        let tmp = NamedTempFile::new().unwrap();
+        let path = tmp.path().to_str().unwrap();
+        state.save_to(path).unwrap();
+        // Should be openable with new KDF params applied
+        let state2 = VaultState::open(path, pw, None).unwrap();
+        assert_eq!(state2.list_entries().len(), 1);
+    }
+
     /// Verify that vault_close (Drop via FFI) actually runs and the handle
     /// is no longer usable. We use the FFI path because that's the real
     /// lifecycle: Box::into_raw → use → Box::from_raw (drop).
@@ -611,6 +802,7 @@ mod tests {
                 epw.len() as u32,
                 url.as_ptr(),
                 notes.as_ptr(),
+                std::ptr::null(),
                 &mut uuid_ptr,
             ),
             VaultResult::Ok

@@ -17,6 +17,7 @@
 - Vault file permissions (chmod 600 on vault, chmod 700 on vault directory after every save)
 - Symlink-safe saves (vault path resolved before writing .tmp to prevent cross-device rename failures)
 - Audit trail (file-based audit log with 30-day rotation; logs unlock, lock, entry changes, password changes)
+- Touch ID unlock (biometric-protected wrapping key in Keychain with kSecAccessControlBiometryCurrentSet; encrypted master password blob; 72-hour full re-auth; invalidated on password change or biometric enrollment change)
 
 ## What Citadel does NOT protect against
 - A fully compromised endpoint (keylogger, screen recorder, memory dump while unlocked)
@@ -45,6 +46,9 @@ Time Machine backs up `vault.kdbx` and `.prev` snapshot files. Auto-backup files
 
 ### AutoType data loss
 The `sanitize_autotype` function drops AutoType configuration blocks that contain only default settings to work around a keepass-rs serialization bug (it writes `DataTransferObfuscation` as `"True"`/`"False"` but KeePassXC expects `0`/`1`). AutoType blocks with custom associations or custom sequences are preserved as-is. This means: if you have entries with default AutoType settings and edit them in Citadel, the AutoType block will be removed on save. Custom AutoType configurations (associations, custom sequences) are preserved but may cause KeePassXC to show a warning.
+
+### Touch ID limitations
+The biometric wrapping key uses XOR encryption of the master password — the security depends entirely on the Keychain ACL (`kSecAccessControlBiometryCurrentSet`) protecting the wrapping key, not the encryption scheme. If an attacker can bypass the Keychain ACL (e.g., via a macOS kernel exploit), the XOR scheme provides no additional protection. The `biometryCurrentSet` flag invalidates the wrapping key when fingerprints are added or removed, but does not protect against a compromised Secure Enclave. The 72-hour timestamp is stored in UserDefaults (not tamper-proof); an attacker with file access could reset it, but would still need a valid fingerprint to retrieve the wrapping key.
 
 ### Other limitations
 - Master password must be valid UTF-8 (keepass-rs limitation)
