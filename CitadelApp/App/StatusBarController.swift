@@ -140,6 +140,28 @@ final class StatusBarController: NSObject {
             menu.addItem(.separator())
         }
 
+        // Vault switcher
+        if let appState, appState.knownVaults.count > 1 {
+            let switchItem = NSMenuItem(title: "Switch Vault", action: nil, keyEquivalent: "")
+            let switchSubmenu = NSMenu()
+            for vault in appState.knownVaults {
+                let item = NSMenuItem(
+                    title: vault.name,
+                    action: #selector(switchToVault(_:)),
+                    keyEquivalent: ""
+                )
+                item.target = self
+                item.representedObject = vault
+                if vault.path == appState.vaultPath {
+                    item.state = .on
+                }
+                switchSubmenu.addItem(item)
+            }
+            switchItem.submenu = switchSubmenu
+            menu.addItem(switchItem)
+            menu.addItem(.separator())
+        }
+
         // Lock Vault
         let lockItem = NSMenuItem(
             title: "Lock Vault",
@@ -235,6 +257,15 @@ final class StatusBarController: NSObject {
         let pasteboard = NSPasteboard.general
         pasteboard.clearContents()
         pasteboard.setString(username, forType: .string)
+    }
+
+    @objc private func switchToVault(_ sender: NSMenuItem) {
+        guard let appState, let vault = sender.representedObject as? VaultInfo else { return }
+        appState.switchVault(to: vault)
+        NSApplication.shared.activate(ignoringOtherApps: true)
+        if let window = NSApplication.shared.windows.first(where: { $0.canBecomeMain }) {
+            window.makeKeyAndOrderFront(nil)
+        }
     }
 
     @objc private func lockVault() {

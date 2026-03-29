@@ -38,6 +38,27 @@ final class AppState {
     var biometricEnrolled = false
     var biometricAvailable = false
 
+    // MARK: - Multi-vault
+
+    /// The active vault's display name.
+    var activeVaultName: String = "Personal"
+
+    /// Current vault file path (mutable for vault switching).
+    private(set) var vaultPath: String
+
+    /// Vault directory path.
+    let vaultDirectory: String
+
+    /// Registry of known vaults.
+    let vaultRegistry = VaultRegistry()
+
+    /// Known vaults (for UI binding).
+    var knownVaults: [VaultInfo] { vaultRegistry.vaults }
+
+    // MARK: - Breach checker
+
+    let breachChecker = BreachChecker()
+
     // MARK: - Non-observable infrastructure
 
     let engine = VaultEngine()
@@ -52,14 +73,10 @@ final class AppState {
     /// Password accessor for biometric enrollment (read-only copy).
     var currentPasswordForBiometric: Data? { currentPassword }
 
-    /// Canonical vault file path.
-    let vaultPath: String
-
-    /// Whether a vault file exists at the default path (or can be recovered).
+    /// Whether a vault file exists at the active path (or can be recovered).
     var vaultExists: Bool {
         let fm = FileManager.default
         if fm.fileExists(atPath: vaultPath) { return true }
-        // Recoverable from backup files
         if fm.fileExists(atPath: vaultPath + ".prev") { return true }
         if fm.fileExists(atPath: vaultPath + ".tmp") { return true }
         return false
@@ -71,9 +88,20 @@ final class AppState {
         let home = FileManager.default.homeDirectoryForCurrentUser
         let dir = home.appendingPathComponent(".citadel")
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        vaultPath = dir.appendingPathComponent("vault.kdbx").path
+        vaultDirectory = dir.path
         auditLogger = AuditLogger(vaultDirectory: dir.path)
         biometricManager = BiometricManager(directory: dir.path)
+
+        // Multi-vault: set up registry and determine active vault
+        vaultRegistry.ensureDefaults(directory: dir.path)
+        if let activePath = vaultRegistry.activeVaultPath {
+            vaultPath = activePath
+        } else {
+            vaultPath = dir.appendingPathComponent("vault.kdbx").path
+        }
+        if let info = vaultRegistry.vaults.first(where: { $0.path == vaultPath }) {
+            activeVaultName = info.name
+        }
 
         // Prevent Spotlight from indexing the vault directory
         let noIndex = dir.appendingPathComponent(".metadata_never_index")
@@ -81,51 +109,67 @@ final class AppState {
             FileManager.default.createFile(atPath: noIndex.path, contents: nil)
         }
 
-        // Attempt crash recovery if vault is missing but backup files exist
         recoverVaultIfNeeded()
-
-        // Warn if vault directory is inside a cloud-synced folder
         cloudSyncWarning = Self.detectCloudSync(vaultDir: dir.path)
 
         autoLockManager = AutoLockManager { [weak self] in
             self?.lockVault()
         }
 
-        // Initialize tracked biometric state for SwiftUI
         biometricAvailable = biometricManager.isAvailable
         biometricEnrolled = biometricManager.isEnabled
 
-        // Menu bar icon — deferred until the app's window server connection is ready.
-        // Creating NSStatusItem during init() crashes because CGSConnection isn't established yet.
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
             self.statusBar = StatusBarController(appState: self)
         }
     }
 
-    /// Sync tracked biometric properties from BiometricManager.
-    /// Call after any operation that changes biometric enrollment.
+    // MARK: - Vault switching
+
+    /// Switch to a different vault. Locks the current vault first.
+    func switchVault(to info: VaultInfo) {
+        if !isLocked { lockVault() }
+        vaultPath = info.path
+        activeVaultName = info.name
+        vaultRegistry.activeVaultPath = info.path
+        recoverVaultIfNeeded()
+    }
+
+    /// Create a new vault file and register it.
+    func createAndRegisterVault(name: String, password: Data, keyfilePath: String? = nil) async throws {
+        let filename = name.lowercased().replacingOccurrences(of: " ", with: "-") + ".kdbx"
+        let path = (vaultDirectory as NSString).appendingPathComponent(filename)
+        vaultRegistry.register(name: name, path: path)
+        vaultPath = path
+        activeVaultName = name
+        try await createVaultAsync(password: password, keyfilePath: keyfilePath)
+    }
+
+    /// Remove a vault from the registry (does not delete the file).
+    func removeVault(path: String) {
+        vaultRegistry.remove(path: path)
+    }
+
+    // MARK: - Biometric
+
     func refreshBiometricState() {
         biometricEnrolled = biometricManager.isEnabled
         biometricAvailable = biometricManager.isAvailable
     }
 
-    /// Check if the vault directory is inside a known cloud sync path.
-    /// The default ~/.citadel is safe, but detect if someone has moved or
-    /// symlinked it into a synced folder.
+    // MARK: - Cloud sync detection
+
     private static func detectCloudSync(vaultDir: String) -> String? {
         let home = FileManager.default.homeDirectoryForCurrentUser.path
         let knownSyncPaths = [
-            home + "/Library/Mobile Documents",   // iCloud Drive
+            home + "/Library/Mobile Documents",
             home + "/Dropbox",
             home + "/Google Drive",
             home + "/OneDrive",
-            home + "/Documents",                   // may be synced via iCloud Desktop & Documents
+            home + "/Documents",
         ]
-
-        // Resolve symlinks to detect if ~/.citadel points into a synced folder
         let resolved = (vaultDir as NSString).resolvingSymlinksInPath
-
         for syncPath in knownSyncPaths {
             if resolved.hasPrefix(syncPath) {
                 return "Your vault is inside a cloud-synced folder (\(syncPath)). "
@@ -134,34 +178,27 @@ final class AppState {
                     + "vault to a non-synced location such as ~/.citadel/."
             }
         }
-
         return nil
     }
 
-    /// If vault.kdbx is missing but .prev or .tmp exist, recover the best candidate.
+    // MARK: - Crash recovery
+
     private func recoverVaultIfNeeded() {
         let fm = FileManager.default
         guard !fm.fileExists(atPath: vaultPath) else { return }
-
-        // Prefer .prev (last validated good copy) over .tmp (may be incomplete)
         let prevPath = vaultPath + ".prev"
         if fm.fileExists(atPath: prevPath), Self.looksLikeKDBX(atPath: prevPath) {
             try? fm.copyItem(atPath: prevPath, toPath: vaultPath)
             return
         }
-
-        // Fall back to .tmp — only promote if it passes structural checks
         let tmpPath = vaultPath + ".tmp"
         if fm.fileExists(atPath: tmpPath), Self.looksLikeKDBX(atPath: tmpPath) {
             _ = rename(tmpPath, vaultPath)
         }
     }
 
-    /// KDBX4 signature: primary 0x9AA2D903 + secondary 0xB54BFB67 (little-endian).
     private static let kdbxMagic: [UInt8] = [0x03, 0xD9, 0xA2, 0x9A, 0x67, 0xFB, 0x4B, 0xB5]
 
-    /// Check that a file is at least 1024 bytes and starts with valid KDBX magic.
-    /// This is a structural sanity check — full validation requires the password.
     private static func looksLikeKDBX(atPath path: String) -> Bool {
         guard let attrs = try? FileManager.default.attributesOfItem(atPath: path),
               let size = attrs[.size] as? UInt64,
@@ -190,7 +227,6 @@ final class AppState {
         statusBar?.refresh()
     }
 
-    /// Async unlock — runs Argon2id off the main thread.
     func unlockAsync(password: Data, keyfilePath: String? = nil) async throws {
         isLoading = true
         defer { isLoading = false }
@@ -211,7 +247,6 @@ final class AppState {
         statusBar?.refresh()
     }
 
-    /// Unlock using Touch ID — retrieves decrypted password from BiometricManager.
     func unlockWithBiometrics() async throws {
         print("BIO UNLOCK: Starting biometric unlock flow")
         let password = try await biometricManager.unlock()
@@ -230,10 +265,10 @@ final class AppState {
         errorMessage = nil
         autoLockManager?.start()
         auditLogger.log(.createVault)
+        vaultRegistry.register(name: activeVaultName, path: vaultPath)
         statusBar?.refresh()
     }
 
-    /// Async create — runs Argon2id off the main thread.
     func createVaultAsync(password: Data, keyfilePath: String? = nil) async throws {
         isLoading = true
         defer { isLoading = false }
@@ -250,13 +285,13 @@ final class AppState {
         errorMessage = nil
         autoLockManager?.start()
         auditLogger.log(.createVault)
+        vaultRegistry.register(name: activeVaultName, path: vaultPath)
         statusBar?.refresh()
     }
 
     func lockVault() {
         autoLockManager?.stop()
         engine.close()
-        // Zero password bytes before releasing the reference
         if currentPassword != nil {
             currentPassword!.resetBytes(in: 0..<currentPassword!.count)
         }
@@ -267,8 +302,6 @@ final class AppState {
         errorMessage = nil
         expiredEntriesMessage = nil
         isLoading = false
-        // Clipboard timer manages its own lifecycle — don't forceClear here
-        // so the user can still paste after the vault locks on inactivity/sleep.
         isLocked = true
         auditLogger.log(.lock)
         statusBar?.refresh()
@@ -288,7 +321,6 @@ final class AppState {
         statusBar?.refresh()
     }
 
-    /// Check for expired entries and set a notification message.
     func checkExpiredEntries() {
         let now = Date()
         let expired = entries.filter { entry in
@@ -319,29 +351,21 @@ final class AppState {
             throw VaultError.wrongPassword
         }
 
-        // Auto-backup before changing (validated + checksummed)
         let backupURL = try BackupManager.autoBackup(vaultPath: vaultPath, password: currentPassword, keyfilePath: currentKeyfilePath)
-
         try engine.changePassword(newPassword, keyfilePath: newKeyfilePath)
 
         do {
             try VaultPersistence.atomicSave(engine: engine, vaultPath: vaultPath, password: newPassword, keyfilePath: newKeyfilePath)
         } catch {
-            // Attempt to restore from backup
             engine.close()
             let fm = FileManager.default
             var restoreFailed = false
-
             do {
-                if fm.fileExists(atPath: vaultPath) {
-                    try fm.removeItem(atPath: vaultPath)
-                }
+                if fm.fileExists(atPath: vaultPath) { try fm.removeItem(atPath: vaultPath) }
                 try fm.moveItem(at: backupURL, to: URL(fileURLWithPath: vaultPath))
                 try engine.open(path: vaultPath, password: currentPassword, keyfilePath: self.currentKeyfilePath)
                 self.currentPassword = currentPassword
-            } catch {
-                restoreFailed = true
-            }
+            } catch { restoreFailed = true }
 
             if restoreFailed {
                 throw VaultError.internalError(
@@ -359,9 +383,6 @@ final class AppState {
         refreshBiometricState()
         auditLogger.log(.changePassword)
 
-        // Password change succeeded — delete the auto-backup that was encrypted
-        // with the old password. Leaving it around lets an attacker brute-force
-        // the weaker old password to recover vault contents.
         let fm = FileManager.default
         try? fm.removeItem(at: backupURL)
         try? fm.removeItem(at: backupURL.appendingPathExtension("sha256"))
@@ -377,7 +398,6 @@ final class AppState {
 
     // MARK: - Import
 
-    /// Import a vault file from an external location (e.g. migration from unsandboxed install).
     func importVault(from sourceURL: URL) throws {
         let fm = FileManager.default
         if fm.fileExists(atPath: vaultPath) {
@@ -393,5 +413,29 @@ final class AppState {
             throw VaultError.internalError("no password available")
         }
         try BackupManager.backup(vaultPath: vaultPath, to: destination, password: pw, keyfilePath: currentKeyfilePath)
+    }
+
+    /// Create a full encrypted backup bundle of all known vaults.
+    func createFullBackup(backupPassword: String, destination: URL) throws {
+        let vaults = vaultRegistry.vaults.map {
+            (name: $0.name, path: $0.path, keyfilePath: nil as String?)
+        }
+        try VaultBackupBundle.createBackup(vaults: vaults, backupPassword: backupPassword, destination: destination)
+    }
+
+    /// Verify a backup bundle.
+    func verifyBackup(at url: URL, backupPassword: String) throws -> VaultBackupBundle.Manifest {
+        try VaultBackupBundle.verify(at: url, backupPassword: backupPassword)
+    }
+
+    /// Restore from a backup bundle.
+    func restoreFromBackup(at url: URL, backupPassword: String) throws -> VaultBackupBundle.Manifest {
+        let manifest = try VaultBackupBundle.restore(from: url, backupPassword: backupPassword, toDirectory: vaultDirectory)
+        // Register restored vaults
+        for vault in manifest.vaults {
+            let path = (vaultDirectory as NSString).appendingPathComponent(vault.filename)
+            vaultRegistry.register(name: vault.name, path: path)
+        }
+        return manifest
     }
 }

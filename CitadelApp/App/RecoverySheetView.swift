@@ -63,12 +63,26 @@ struct RecoverySheetView: View {
                         ])
                     }
 
+                    // Encrypted Backup
+                    VStack(alignment: .leading, spacing: 8) {
+                        SectionHeader(title: "Encrypted Backup")
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text("If you created a Full Vault Backup (.ctdl file), it contains all your vaults encrypted with a separate backup password.")
+                                .font(.system(size: 12))
+                            Text("To restore: Open Citadel \u{2192} More Actions \u{2192} Restore from Backup, then enter the backup password.")
+                                .font(.system(size: 12))
+                        }
+                        .padding(12)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                    }
+
                     // Warning
                     HStack(spacing: 8) {
                         Image(systemName: "exclamationmark.triangle.fill")
                             .font(.system(size: 14))
                             .foregroundStyle(Color.citadelWarning)
-                        Text("Your master password is not included in this document. Store it separately and securely.")
+                        Text("Your master password and backup password are not included in this document. Store them separately and securely.")
                             .font(.system(size: 12, weight: .medium))
                     }
                     .padding(12)

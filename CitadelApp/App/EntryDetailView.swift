@@ -10,6 +10,7 @@ struct EntryDetailView: View {
     @State private var showPassword = false
     @State private var showingEdit = false
     @State private var showingDeleteConfirmation = false
+    @State private var showingShare = false
     @State private var errorMessage: String?
     @State private var totpCode: String = ""
     @State private var totpSecondsRemaining: Int = 0
@@ -145,6 +146,13 @@ struct EntryDetailView: View {
                 }
 
                 Button {
+                    showingShare = true
+                } label: {
+                    Image(systemName: "square.and.arrow.up")
+                }
+                .help("Share entry")
+
+                Button {
                     showingEdit = true
                 } label: {
                     Image(systemName: "pencil")
@@ -161,6 +169,9 @@ struct EntryDetailView: View {
         }
         .sheet(isPresented: $showingEdit, onDismiss: { loadEntry() }) {
             EntryEditView(mode: .edit(entry))
+        }
+        .sheet(isPresented: $showingShare) {
+            ShareEntryView(entry: entry)
         }
         .confirmationDialog(
             "Delete Entry",

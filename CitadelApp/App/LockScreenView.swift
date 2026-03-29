@@ -48,6 +48,27 @@ struct LockScreenView: View {
                     .padding(.top, 2)
                     .padding(.bottom, 28)
 
+                // Vault picker
+                if appState.knownVaults.count > 1 {
+                    Picker("", selection: Binding(
+                        get: { appState.vaultPath },
+                        set: { newPath in
+                            if let vault = appState.knownVaults.first(where: { $0.path == newPath }) {
+                                appState.switchVault(to: vault)
+                                password = ""
+                                errorMessage = nil
+                            }
+                        }
+                    )) {
+                        ForEach(appState.knownVaults) { vault in
+                            Text(vault.name).tag(vault.path)
+                        }
+                    }
+                    .labelsHidden()
+                    .frame(width: 200)
+                    .padding(.bottom, 4)
+                }
+
                 // Form content
                 VStack(spacing: 14) {
                     if isCreating {
