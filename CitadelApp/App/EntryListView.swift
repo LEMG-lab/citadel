@@ -7,7 +7,6 @@ struct EntryListView: View {
     @State private var searchText = ""
     @State private var selectedGroup: String? = nil
 
-    /// All distinct group paths from entries.
     private var availableGroups: [String] {
         let groups = Set(appState.entries.map(\.group))
         return groups.sorted()
@@ -16,7 +15,6 @@ struct EntryListView: View {
     private var filteredEntries: [(entry: VaultEntrySummary, score: Int)] {
         var source = appState.entries
 
-        // Filter by group if one is selected
         if let group = selectedGroup {
             source = source.filter { $0.group == group || $0.group.hasPrefix(group + "/") }
         }
@@ -38,7 +36,7 @@ struct EntryListView: View {
             .sorted { $0.score > $1.score }
         }
 
-        // Sort favorites first (stable sort preserves relative order within each group)
+        // Stable sort: favorites first
         results.sort { lhs, rhs in
             if lhs.entry.isFavorite != rhs.entry.isFavorite {
                 return lhs.entry.isFavorite
@@ -49,6 +47,10 @@ struct EntryListView: View {
         return results
     }
 
+    private var hasFavorites: Bool {
+        filteredEntries.contains { $0.entry.isFavorite }
+    }
+
     var body: some View {
         @Bindable var appState = appState
         VStack(spacing: 0) {
@@ -56,62 +58,45 @@ struct EntryListView: View {
                 groupPicker
             }
 
-            List(filteredEntries, id: \.entry.id, selection: $appState.selectedEntryID) { item in
-                HStack {
-                    entryIcon(item.entry)
-                        .frame(width: 16)
-                        .foregroundStyle(.secondary)
-                    VStack(alignment: .leading, spacing: 2) {
-                        HStack(spacing: 4) {
-                            if item.entry.isFavorite {
-                                Image(systemName: "star.fill")
-                                    .font(.caption2)
-                                    .foregroundStyle(.yellow)
-                            }
-                            highlightedText(item.entry.title, query: searchText)
-                                .font(.headline)
-                                .lineLimit(1)
+            List(selection: $appState.selectedEntryID) {
+                if hasFavorites {
+                    Section {
+                        ForEach(filteredEntries.filter(\.entry.isFavorite), id: \.entry.id) { item in
+                            entryRow(item.entry)
+                                .tag(item.entry.id)
                         }
-                        if item.entry.entryType != "secure_note" && !item.entry.username.isEmpty {
-                            highlightedText(item.entry.username, query: searchText)
-                                .font(.subheadline)
-                                .foregroundStyle(.secondary)
-                                .lineLimit(1)
-                        }
-                        if item.entry.entryType != "secure_note" && !item.entry.url.isEmpty {
-                            highlightedText(item.entry.url, query: searchText)
-                                .font(.caption)
-                                .foregroundStyle(.tertiary)
-                                .lineLimit(1)
-                                .truncationMode(.tail)
-                        }
+                    } header: {
+                        SectionHeader(title: "Favorites")
                     }
-                    Spacer()
-                    if let expiry = item.entry.expiryDate {
-                        if expiry < Date() {
-                            Image(systemName: "circle.fill")
-                                .foregroundStyle(.red)
-                                .font(.caption2)
-                                .help("Expired")
-                        } else if expiry < Date().addingTimeInterval(7 * 24 * 3600) {
-                            Image(systemName: "circle.fill")
-                                .foregroundStyle(.orange)
-                                .font(.caption2)
-                                .help("Expiring soon")
+
+                    Section {
+                        ForEach(filteredEntries.filter { !$0.entry.isFavorite }, id: \.entry.id) { item in
+                            entryRow(item.entry)
+                                .tag(item.entry.id)
                         }
+                    } header: {
+                        SectionHeader(title: "All Entries")
+                    }
+                } else {
+                    ForEach(filteredEntries, id: \.entry.id) { item in
+                        entryRow(item.entry)
+                            .tag(item.entry.id)
                     }
                 }
-                .padding(.vertical, 2)
-                .tag(item.entry.id)
             }
             .searchable(text: $searchText, prompt: "Search entries")
             .overlay {
                 if appState.entries.isEmpty {
-                    ContentUnavailableView(
-                        "No Entries",
-                        systemImage: "key",
-                        description: Text("Click + to add your first entry.")
-                    )
+                    VStack(spacing: 12) {
+                        Image(systemName: "key.fill")
+                            .font(.system(size: 32, weight: .light))
+                            .foregroundStyle(Color.citadelSecondary.opacity(0.5))
+                        Text("No Entries Yet")
+                            .font(.system(size: 15, weight: .semibold))
+                        Text("Click + to add your first entry")
+                            .font(.system(size: 12))
+                            .foregroundStyle(Color.citadelSecondary)
+                    }
                 } else if filteredEntries.isEmpty {
                     ContentUnavailableView.search(text: searchText)
                 }
@@ -119,73 +104,99 @@ struct EntryListView: View {
         }
     }
 
+    // MARK: - Entry Row
+
     @ViewBuilder
-    private func entryIcon(_ entry: VaultEntrySummary) -> some View {
+    private func entryRow(_ entry: VaultEntrySummary) -> some View {
+        HStack(spacing: 10) {
+            // Icon with colored background
+            entryIconBadge(entry)
+
+            VStack(alignment: .leading, spacing: 1) {
+                HStack(spacing: 4) {
+                    if entry.isFavorite {
+                        Image(systemName: "star.fill")
+                            .font(.system(size: 9))
+                            .foregroundStyle(.yellow)
+                    }
+                    Text(entry.title.isEmpty ? "(Untitled)" : entry.title)
+                        .font(.system(size: 13, weight: .semibold))
+                        .lineLimit(1)
+                }
+                if entry.entryType != "secure_note" && !entry.username.isEmpty {
+                    Text(entry.username)
+                        .font(.system(size: 11))
+                        .foregroundStyle(Color.citadelSecondary)
+                        .lineLimit(1)
+                }
+            }
+
+            Spacer()
+
+            if let expiry = entry.expiryDate {
+                if expiry < Date() {
+                    Circle()
+                        .fill(Color.citadelDanger)
+                        .frame(width: 6, height: 6)
+                        .help("Expired")
+                } else if expiry < Date().addingTimeInterval(7 * 24 * 3600) {
+                    Circle()
+                        .fill(Color.citadelWarning)
+                        .frame(width: 6, height: 6)
+                        .help("Expiring soon")
+                }
+            }
+        }
+        .padding(.vertical, 2)
+    }
+
+    @ViewBuilder
+    private func entryIconBadge(_ entry: VaultEntrySummary) -> some View {
         if entry.entryType == "secure_note" {
-            Image(systemName: "note.text")
+            IconBadge(symbol: "note.text", color: .purple, size: 26)
         } else {
-            Image(systemName: "key")
+            IconBadge(symbol: "key.fill", color: .citadelAccent, size: 26)
         }
     }
+
+    // MARK: - Group Picker
 
     @ViewBuilder
     private var groupPicker: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 6) {
-                groupButton(label: "All", group: nil)
+                groupChip(label: "All", group: nil)
                 ForEach(availableGroups, id: \.self) { group in
-                    groupButton(label: groupDisplayName(group), group: group)
+                    groupChip(label: groupDisplayName(group), group: group)
                 }
             }
-            .padding(.horizontal, 8)
+            .padding(.horizontal, 10)
             .padding(.vertical, 6)
         }
         Divider()
     }
 
-    private func groupButton(label: String, group: String?) -> some View {
+    private func groupChip(label: String, group: String?) -> some View {
         Button(label) {
             selectedGroup = group
         }
         .buttonStyle(.plain)
+        .font(.system(size: 12, weight: selectedGroup == group ? .semibold : .regular))
         .padding(.horizontal, 10)
         .padding(.vertical, 4)
-        .background(selectedGroup == group ? Color.accentColor.opacity(0.15) : Color.clear)
-        .cornerRadius(6)
-        .foregroundStyle(selectedGroup == group ? .primary : .secondary)
-        .font(.callout)
+        .background(
+            selectedGroup == group
+                ? Color.citadelAccent.opacity(0.15)
+                : Color.clear,
+            in: Capsule()
+        )
+        .foregroundStyle(selectedGroup == group ? Color.citadelAccent : Color.citadelSecondary)
     }
 
-    /// Display name: last component of the group path.
     private func groupDisplayName(_ path: String) -> String {
         if let last = path.split(separator: "/").last {
             return String(last)
         }
         return path
-    }
-
-    /// Build an AttributedString with matched characters highlighted.
-    private func highlightedText(_ text: String, query: String) -> Text {
-        guard !query.isEmpty else { return Text(text) }
-
-        let result = FuzzyMatch.match(query: query, in: text)
-        guard result.score > 0, !result.matchedIndices.isEmpty else {
-            return Text(text)
-        }
-
-        let chars = Array(text)
-        let matchedSet = Set(result.matchedIndices)
-        var attributed = AttributedString()
-
-        for (i, char) in chars.enumerated() {
-            var chunk = AttributedString(String(char))
-            if matchedSet.contains(i) {
-                chunk.foregroundColor = .accentColor
-                chunk.font = .body.bold()
-            }
-            attributed.append(chunk)
-        }
-
-        return Text(attributed)
     }
 }

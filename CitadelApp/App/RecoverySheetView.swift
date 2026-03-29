@@ -10,60 +10,114 @@ struct RecoverySheetView: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Text("Citadel Recovery Information")
-                .font(.title2.weight(.semibold))
-
-            Divider()
-
-            Group {
-                LabeledContent("Vault file", value: appState.vaultPath)
-                LabeledContent("Date", value: dateString)
+        VStack(spacing: 0) {
+            // Header
+            HStack {
+                Text("Recovery Information")
+                    .font(.system(size: 15, weight: .semibold))
+                Spacer()
             }
-            .font(.callout)
+            .padding(.horizontal, 24)
+            .padding(.top, 16)
+            .padding(.bottom, 8)
 
             Divider()
 
-            Text("Opening with KeePassXC")
-                .font(.headline)
-            Text("""
-            1. Download KeePassXC from https://keepassxc.org
-            2. Open KeePassXC
-            3. Select File > Open Database
-            4. Navigate to the vault file listed above
-            5. Enter your master password when prompted
-            """)
-            .font(.callout)
+            ScrollView {
+                VStack(alignment: .leading, spacing: 16) {
+                    // Info fields
+                    VStack(alignment: .leading, spacing: 8) {
+                        SectionHeader(title: "Vault Details")
+                        FieldCard(label: "Vault File") {
+                            Text(appState.vaultPath)
+                                .font(.system(size: 12))
+                                .textSelection(.enabled)
+                        }
+                        FieldCard(label: "Date") {
+                            Text(dateString)
+                                .font(.system(size: 12))
+                        }
+                    }
+
+                    // KeePassXC
+                    VStack(alignment: .leading, spacing: 8) {
+                        SectionHeader(title: "Opening with KeePassXC")
+                        recoverySteps([
+                            "Download KeePassXC from keepassxc.org",
+                            "Open KeePassXC",
+                            "Select File > Open Database",
+                            "Navigate to the vault file listed above",
+                            "Enter your master password when prompted",
+                        ])
+                    }
+
+                    // Strongbox
+                    VStack(alignment: .leading, spacing: 8) {
+                        SectionHeader(title: "Opening with Strongbox")
+                        recoverySteps([
+                            "Download Strongbox from the Mac App Store",
+                            "Open Strongbox",
+                            "Select File > Open",
+                            "Navigate to the vault file listed above",
+                            "Enter your master password when prompted",
+                        ])
+                    }
+
+                    // Warning
+                    HStack(spacing: 8) {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .font(.system(size: 14))
+                            .foregroundStyle(Color.citadelWarning)
+                        Text("Your master password is not included in this document. Store it separately and securely.")
+                            .font(.system(size: 12, weight: .medium))
+                    }
+                    .padding(12)
+                    .background(Color.citadelWarning.opacity(0.08), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                }
+                .padding(24)
+            }
 
             Divider()
-
-            Text("Opening with Strongbox")
-                .font(.headline)
-            Text("""
-            1. Download Strongbox from the Mac App Store
-            2. Open Strongbox
-            3. Select File > Open
-            4. Navigate to the vault file listed above
-            5. Enter your master password when prompted
-            """)
-            .font(.callout)
-
-            Divider()
-
-            Text("IMPORTANT: Your master password is not included in this document. Store it separately and securely.")
-                .font(.callout.weight(.semibold))
-
-            Spacer()
 
             HStack {
-                Button("Print") { printSheet() }
-                    .buttonStyle(.borderedProminent)
+                Button {
+                    printSheet()
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: "printer")
+                            .font(.system(size: 11))
+                        Text("Print")
+                            .font(.system(size: 13))
+                    }
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(.citadelAccent)
                 Spacer()
                 Button("Close") { dismiss() }
             }
+            .padding(.horizontal, 24)
+            .padding(.vertical, 12)
         }
-        .padding(32)
-        .frame(width: 580, height: 640)
+        .frame(width: 560, height: 620)
+    }
+
+    @ViewBuilder
+    private func recoverySteps(_ steps: [String]) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            ForEach(Array(steps.enumerated()), id: \.offset) { index, step in
+                HStack(alignment: .top, spacing: 8) {
+                    Text("\(index + 1).")
+                        .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                        .foregroundStyle(Color.citadelSecondary)
+                        .frame(width: 20, alignment: .trailing)
+                    Text(step)
+                        .font(.system(size: 12))
+                }
+            }
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
     }
 
     private func printSheet() {

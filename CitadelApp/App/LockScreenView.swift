@@ -20,22 +20,52 @@ struct LockScreenView: View {
     }
 
     var body: some View {
-        VStack(spacing: 20) {
-            Spacer()
+        ZStack {
+            // Subtle gradient background
+            LinearGradient(
+                colors: [Color.citadelAccent.opacity(0.05), .clear],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+            .ignoresSafeArea()
 
-            Text("Citadel")
-                .font(.largeTitle.weight(.semibold))
+            VStack(spacing: 0) {
+                Spacer()
 
-            if isCreating {
-                createView
-            } else {
-                unlockView
+                // Shield icon
+                Image(systemName: "shield.lock.fill")
+                    .font(.system(size: 56, weight: .light))
+                    .foregroundStyle(Color.citadelAccent)
+                    .padding(.bottom, 12)
+
+                Text("Citadel")
+                    .font(.system(size: 28, weight: .bold, design: .rounded))
+
+                Text(isCreating ? "Create a new vault" : "Enter your master password")
+                    .font(.system(size: 13))
+                    .foregroundStyle(Color.citadelSecondary)
+                    .padding(.top, 2)
+                    .padding(.bottom, 28)
+
+                // Form content
+                VStack(spacing: 14) {
+                    if isCreating {
+                        createFields
+                    } else {
+                        unlockFields
+                    }
+                }
+                .frame(width: 280)
+
+                Spacer()
+
+                Text("v1.3")
+                    .font(.system(size: 11))
+                    .foregroundStyle(Color.citadelSecondary.opacity(0.5))
+                    .padding(.bottom, 16)
             }
-
-            Spacer()
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .frame(width: 320)
         .confirmationDialog(
             "Create New Vault",
             isPresented: $showCreateConfirmation,
@@ -48,12 +78,19 @@ struct LockScreenView: View {
         }
     }
 
-    // MARK: - Unlock
+    // MARK: - Unlock Fields
 
     @ViewBuilder
-    private var unlockView: some View {
-        SecureField("Master Password", text: $password)
-            .textFieldStyle(.roundedBorder)
+    private var unlockFields: some View {
+        SecureField(text: $password, prompt: Text("Master Password")) {}
+            .textFieldStyle(.plain)
+            .font(.system(size: 14))
+            .padding(10)
+            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .stroke(Color.citadelAccent.opacity(focusedField == .password ? 0.6 : 0), lineWidth: 1.5)
+            )
             .focused($focusedField, equals: .password)
             .onSubmit { unlock() }
             .onAppear { focusedField = .password }
@@ -64,21 +101,34 @@ struct LockScreenView: View {
         if appState.isLoading {
             ProgressView()
                 .controlSize(.small)
+                .padding(.vertical, 4)
         }
 
         if let msg = errorMessage {
-            Text(msg)
-                .foregroundStyle(.red)
-                .font(.callout)
+            HStack(spacing: 4) {
+                Image(systemName: "exclamationmark.circle.fill")
+                    .font(.system(size: 12))
+                Text(msg)
+                    .font(.system(size: 12))
+            }
+            .foregroundStyle(Color.citadelDanger)
         }
 
-        Button("Unlock") { unlock() }
-            .buttonStyle(.borderedProminent)
-            .keyboardShortcut(.defaultAction)
-            .disabled(password.isEmpty || appState.isLoading)
+        Button(action: unlock) {
+            Text("Unlock")
+                .font(.system(size: 14, weight: .semibold))
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 8)
+        }
+        .buttonStyle(.borderedProminent)
+        .tint(.citadelAccent)
+        .keyboardShortcut(.defaultAction)
+        .disabled(password.isEmpty || appState.isLoading)
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
 
         if !appState.vaultExists {
-            Divider().frame(width: 200)
+            Divider()
+                .padding(.vertical, 4)
             Button("Create New Vault") {
                 isCreating = true
                 password = ""
@@ -86,35 +136,57 @@ struct LockScreenView: View {
                 errorMessage = nil
                 focusedField = .password
             }
-            Button("Import Existing Vault") {
-                importVault()
-            }
+            .font(.system(size: 13))
+            .foregroundStyle(Color.citadelAccent)
+            .buttonStyle(.plain)
+
+            Button("Import Existing Vault") { importVault() }
+                .font(.system(size: 13))
+                .foregroundStyle(Color.citadelSecondary)
+                .buttonStyle(.plain)
         }
     }
 
-    // MARK: - Create
+    // MARK: - Create Fields
 
     @ViewBuilder
-    private var createView: some View {
-        SecureField("Master Password", text: $password)
-            .textFieldStyle(.roundedBorder)
+    private var createFields: some View {
+        SecureField(text: $password, prompt: Text("Master Password")) {}
+            .textFieldStyle(.plain)
+            .font(.system(size: 14))
+            .padding(10)
+            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .stroke(Color.citadelAccent.opacity(focusedField == .password ? 0.6 : 0), lineWidth: 1.5)
+            )
             .focused($focusedField, equals: .password)
             .onAppear { focusedField = .password }
 
-        SecureField("Confirm Password", text: $confirmPassword)
-            .textFieldStyle(.roundedBorder)
+        SecureField(text: $confirmPassword, prompt: Text("Confirm Password")) {}
+            .textFieldStyle(.plain)
+            .font(.system(size: 14))
+            .padding(10)
+            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .stroke(Color.citadelAccent.opacity(focusedField == .confirm ? 0.6 : 0), lineWidth: 1.5)
+            )
             .focused($focusedField, equals: .confirm)
             .onSubmit { requestCreate() }
 
         keyfileRow
 
         if let msg = errorMessage {
-            Text(msg)
-                .foregroundStyle(.red)
-                .font(.callout)
+            HStack(spacing: 4) {
+                Image(systemName: "exclamationmark.circle.fill")
+                    .font(.system(size: 12))
+                Text(msg).font(.system(size: 12))
+            }
+            .foregroundStyle(Color.citadelDanger)
         }
 
-        HStack(spacing: 12) {
+        HStack(spacing: 10) {
             Button("Cancel") {
                 isCreating = false
                 password = ""
@@ -122,10 +194,21 @@ struct LockScreenView: View {
                 keyfilePath = nil
                 errorMessage = nil
             }
-            Button("Create Vault") { requestCreate() }
-                .buttonStyle(.borderedProminent)
-                .keyboardShortcut(.defaultAction)
-                .disabled(password.isEmpty || confirmPassword.isEmpty || appState.isLoading)
+            .buttonStyle(.plain)
+            .foregroundStyle(Color.citadelSecondary)
+            .font(.system(size: 13))
+
+            Button(action: requestCreate) {
+                Text("Create Vault")
+                    .font(.system(size: 14, weight: .semibold))
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 8)
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(.citadelAccent)
+            .keyboardShortcut(.defaultAction)
+            .disabled(password.isEmpty || confirmPassword.isEmpty || appState.isLoading)
+            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
         }
     }
 
@@ -133,25 +216,35 @@ struct LockScreenView: View {
 
     @ViewBuilder
     private var keyfileRow: some View {
-        HStack {
+        HStack(spacing: 6) {
             if let path = keyfilePath {
                 Image(systemName: "key.fill")
-                    .foregroundStyle(.secondary)
+                    .font(.system(size: 11))
+                    .foregroundStyle(Color.citadelSecondary)
                 Text((path as NSString).lastPathComponent)
                     .lineLimit(1)
                     .truncationMode(.middle)
-                    .foregroundStyle(.secondary)
-                    .font(.callout)
-                Button(role: .destructive) {
-                    keyfilePath = nil
-                } label: {
+                    .foregroundStyle(Color.citadelSecondary)
+                    .font(.system(size: 12))
+                Button(role: .destructive) { keyfilePath = nil } label: {
                     Image(systemName: "xmark.circle.fill")
-                        .foregroundStyle(.secondary)
+                        .font(.system(size: 12))
+                        .foregroundStyle(Color.citadelSecondary)
                 }
                 .buttonStyle(.plain)
             } else {
-                Button("Add Key File…") { selectKeyfile() }
-                    .font(.callout)
+                Button {
+                    selectKeyfile()
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: "key")
+                            .font(.system(size: 11))
+                        Text("Add Key File\u{2026}")
+                            .font(.system(size: 12))
+                    }
+                    .foregroundStyle(Color.citadelSecondary)
+                }
+                .buttonStyle(.plain)
             }
         }
     }
@@ -198,9 +291,7 @@ struct LockScreenView: View {
         panel.title = "Select Vault File"
         panel.allowedContentTypes = [.init(filenameExtension: "kdbx")!]
         panel.allowsMultipleSelection = false
-
         guard panel.runModal() == .OK, let url = panel.url else { return }
-
         do {
             try appState.importVault(from: url)
             errorMessage = nil

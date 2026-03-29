@@ -56,120 +56,217 @@ struct EntryEditView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            Form {
-                if !isEditing {
-                    Section("Entry Type") {
-                        Picker("Type", selection: $entryType) {
-                            Text("Password Entry").tag("password")
-                            Text("Secure Note").tag("secure_note")
-                        }
-                        .pickerStyle(.segmented)
-                    }
-                }
-
-                Section {
-                    TextField("Title", text: $title)
-
-                    if !isSecureNote {
-                        TextField("Username", text: $username)
-                        HStack {
-                            if showPassword {
-                                TextField("Password", text: $password)
-                                    .font(.system(.body, design: .monospaced))
-                            } else {
-                                SecureField("Password", text: $password)
-                            }
-                            Button(showPassword ? "Hide" : "Show") {
-                                showPassword.toggle()
-                            }
-                            .buttonStyle(.borderless)
-                            Button("Generate") {
-                                showingGenerator = true
-                            }
-                            .buttonStyle(.borderless)
-                        }
-                        PasswordStrengthBar(password: password)
-                        TextField("URL", text: $url)
-                    }
-
-                    TextField(isSecureNote ? "Content" : "Notes", text: $notes, axis: .vertical)
-                        .lineLimit(3...8)
-
-                    if !isSecureNote {
-                        TextField("TOTP URI (otpauth://...)", text: $otpURI)
-                            .font(.system(.body, design: .monospaced))
-                    }
-                }
-
-                if !isEditing {
-                    Section("Folder") {
-                        Picker("Folder", selection: $group) {
-                            Text("Root (default)").tag("")
-                            ForEach(existingGroups, id: \.self) { g in
-                                Text(g).tag(g)
-                            }
-                            Text("New folder...").tag("__new__")
-                        }
-                        if group == "__new__" {
-                            TextField("Folder path (e.g. Work/Email)", text: $newGroupName)
-                        }
-                    }
-                }
-
-                Section("Expiration") {
-                    Toggle("Set expiry date", isOn: $hasExpiry)
-                    if hasExpiry {
-                        DatePicker("Expires on", selection: $expiryDate, displayedComponents: .date)
-                    }
-                }
-
-                Section("Custom Fields") {
-                    ForEach($customFields) { $field in
-                        HStack {
-                            TextField("Name", text: $field.key)
-                                .frame(maxWidth: 120)
-                            TextField("Value", text: $field.value)
-                            Toggle("Protected", isOn: $field.isProtected)
-                                .toggleStyle(.checkbox)
-                                .labelsHidden()
-                                .help("Protect this field")
-                            Button(role: .destructive) {
-                                customFields.removeAll { $0.id == field.id }
-                            } label: {
-                                Image(systemName: "minus.circle.fill")
-                                    .foregroundStyle(.red)
-                            }
-                            .buttonStyle(.plain)
-                        }
-                    }
-                    Button("Add Field") {
-                        customFields.append(EditableCustomField(key: "", value: "", isProtected: false))
-                    }
-                }
-
-                if let msg = errorMessage {
-                    Section {
-                        Text(msg)
-                            .foregroundStyle(.red)
-                    }
-                }
+            // Header
+            HStack {
+                Text(isEditing ? "Edit Entry" : "New Entry")
+                    .font(.system(size: 15, weight: .semibold))
+                Spacer()
             }
-            .formStyle(.grouped)
+            .padding(.horizontal, 20)
+            .padding(.top, 16)
+            .padding(.bottom, 8)
 
             Divider()
 
+            ScrollView {
+                VStack(alignment: .leading, spacing: 16) {
+                    // Entry type selector (new entries only)
+                    if !isEditing {
+                        VStack(alignment: .leading, spacing: 6) {
+                            SectionHeader(title: "Entry Type")
+                            Picker("Type", selection: $entryType) {
+                                Label("Password", systemImage: "key.fill").tag("password")
+                                Label("Secure Note", systemImage: "note.text").tag("secure_note")
+                            }
+                            .pickerStyle(.segmented)
+                        }
+                    }
+
+                    // Core fields
+                    VStack(alignment: .leading, spacing: 10) {
+                        SectionHeader(title: "Details")
+
+                        styledField("Title", text: $title)
+
+                        if !isSecureNote {
+                            styledField("Username", text: $username)
+
+                            // Password with show/generate
+                            VStack(alignment: .leading, spacing: 4) {
+                                HStack(spacing: 6) {
+                                    if showPassword {
+                                        TextField(text: $password, prompt: Text("Password").foregroundStyle(.tertiary)) {}
+                                            .font(.system(size: 13, design: .monospaced))
+                                    } else {
+                                        SecureField(text: $password, prompt: Text("Password").foregroundStyle(.tertiary)) {}
+                                            .font(.system(size: 13))
+                                    }
+
+                                    Button {
+                                        showPassword.toggle()
+                                    } label: {
+                                        Image(systemName: showPassword ? "eye.slash" : "eye")
+                                            .font(.system(size: 12))
+                                            .foregroundStyle(Color.citadelSecondary)
+                                    }
+                                    .buttonStyle(.plain)
+                                    .help(showPassword ? "Hide" : "Show")
+
+                                    Button {
+                                        showingGenerator = true
+                                    } label: {
+                                        Image(systemName: "wand.and.stars")
+                                            .font(.system(size: 12))
+                                            .foregroundStyle(Color.citadelAccent)
+                                    }
+                                    .buttonStyle(.plain)
+                                    .help("Generate password")
+                                }
+                                .textFieldStyle(.plain)
+                                .padding(8)
+                                .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+
+                                PasswordStrengthBar(password: password)
+                            }
+
+                            styledField("URL", text: $url)
+                        }
+
+                        // Notes / Secure note content
+                        VStack(alignment: .leading, spacing: 4) {
+                            TextField(
+                                text: $notes,
+                                prompt: Text(isSecureNote ? "Content" : "Notes").foregroundStyle(.tertiary),
+                                axis: .vertical
+                            ) {}
+                            .textFieldStyle(.plain)
+                            .font(.system(size: 13))
+                            .lineLimit(3...8)
+                            .padding(8)
+                            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+                        }
+
+                        if !isSecureNote {
+                            styledField("TOTP URI (otpauth://...)", text: $otpURI, monospaced: true)
+                        }
+                    }
+
+                    // Folder (new entries only)
+                    if !isEditing {
+                        VStack(alignment: .leading, spacing: 6) {
+                            SectionHeader(title: "Folder")
+                            Picker("Folder", selection: $group) {
+                                Text("Root (default)").tag("")
+                                ForEach(existingGroups, id: \.self) { g in
+                                    Text(g).tag(g)
+                                }
+                                Text("New folder\u{2026}").tag("__new__")
+                            }
+                            .labelsHidden()
+                            if group == "__new__" {
+                                styledField("Folder path (e.g. Work/Email)", text: $newGroupName)
+                            }
+                        }
+                    }
+
+                    // Expiration
+                    VStack(alignment: .leading, spacing: 6) {
+                        SectionHeader(title: "Expiration")
+                        Toggle("Set expiry date", isOn: $hasExpiry)
+                            .font(.system(size: 13))
+                        if hasExpiry {
+                            DatePicker("Expires", selection: $expiryDate, displayedComponents: .date)
+                                .font(.system(size: 13))
+                        }
+                    }
+
+                    // Custom Fields
+                    VStack(alignment: .leading, spacing: 8) {
+                        SectionHeader(title: "Custom Fields")
+
+                        ForEach($customFields) { $field in
+                            HStack(spacing: 6) {
+                                // FIX: Use explicit prompt: parameter so placeholder clears properly
+                                TextField(text: $field.key, prompt: Text("Name").foregroundStyle(.tertiary)) {}
+                                    .textFieldStyle(.plain)
+                                    .font(.system(size: 13))
+                                    .frame(maxWidth: 120)
+                                    .padding(6)
+                                    .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 5, style: .continuous))
+
+                                TextField(text: $field.value, prompt: Text("Value").foregroundStyle(.tertiary)) {}
+                                    .textFieldStyle(.plain)
+                                    .font(.system(size: 13))
+                                    .padding(6)
+                                    .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 5, style: .continuous))
+
+                                Button {
+                                    field.isProtected.toggle()
+                                } label: {
+                                    Image(systemName: field.isProtected ? "lock.fill" : "lock.open")
+                                        .font(.system(size: 11))
+                                        .foregroundStyle(field.isProtected ? Color.citadelAccent : Color.citadelSecondary)
+                                }
+                                .buttonStyle(.plain)
+                                .help(field.isProtected ? "Protected" : "Not protected")
+
+                                Button(role: .destructive) {
+                                    customFields.removeAll { $0.id == field.id }
+                                } label: {
+                                    Image(systemName: "minus.circle.fill")
+                                        .font(.system(size: 14))
+                                        .foregroundStyle(Color.citadelDanger.opacity(0.7))
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
+
+                        Button {
+                            customFields.append(EditableCustomField(key: "", value: "", isProtected: false))
+                        } label: {
+                            HStack(spacing: 4) {
+                                Image(systemName: "plus.circle.fill")
+                                    .font(.system(size: 13))
+                                Text("Add Field")
+                                    .font(.system(size: 12, weight: .medium))
+                            }
+                            .foregroundStyle(Color.citadelAccent)
+                        }
+                        .buttonStyle(.plain)
+                    }
+
+                    if let msg = errorMessage {
+                        HStack(spacing: 4) {
+                            Image(systemName: "exclamationmark.circle.fill")
+                                .font(.system(size: 12))
+                            Text(msg).font(.system(size: 12))
+                        }
+                        .foregroundStyle(Color.citadelDanger)
+                    }
+                }
+                .padding(20)
+            }
+
+            Divider()
+
+            // Bottom bar
             HStack {
                 Spacer()
                 Button("Cancel") { dismiss() }
                     .keyboardShortcut(.cancelAction)
-                Button("Save") { save() }
-                    .buttonStyle(.borderedProminent)
-                    .keyboardShortcut(.defaultAction)
-                    .disabled(title.isEmpty)
+                Button(action: save) {
+                    Text("Save")
+                        .font(.system(size: 13, weight: .semibold))
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(.citadelAccent)
+                .keyboardShortcut(.defaultAction)
+                .disabled(title.isEmpty)
             }
-            .padding()
+            .padding(.horizontal, 20)
+            .padding(.vertical, 12)
         }
-        .frame(minWidth: 440, minHeight: 400)
+        .frame(minWidth: 460, minHeight: 440)
         .onAppear { populateFields() }
         .sheet(isPresented: $showingGenerator) {
             PasswordGeneratorView { generated in
@@ -178,6 +275,19 @@ struct EntryEditView: View {
             }
         }
     }
+
+    // MARK: - Styled Field
+
+    @ViewBuilder
+    private func styledField(_ placeholder: String, text: Binding<String>, monospaced: Bool = false) -> some View {
+        TextField(text: text, prompt: Text(placeholder).foregroundStyle(.tertiary)) {}
+            .textFieldStyle(.plain)
+            .font(.system(size: 13, design: monospaced ? .monospaced : .default))
+            .padding(8)
+            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+    }
+
+    // MARK: - Data
 
     private func populateFields() {
         if case .edit(let entry) = mode {
@@ -211,14 +321,12 @@ struct EntryEditView: View {
                     otpURI: isSecureNote ? "" : otpURI, group: effectiveGroup,
                     expiryDate: expiry
                 )
-                // Set entry type
                 if entryType == "secure_note" {
                     try appState.engine.setCustomField(
                         uuid: uuid, key: "Citadel_EntryType",
                         value: "secure_note", isProtected: false
                     )
                 }
-                // Save custom fields
                 for field in customFields where !field.key.isEmpty {
                     try appState.engine.setCustomField(
                         uuid: uuid, key: field.key,
@@ -234,7 +342,6 @@ struct EntryEditView: View {
                     password: pwData, url: url, notes: notes,
                     otpURI: otpURI, expiryDate: expiry
                 )
-                // Sync custom fields: remove old ones not in new set, add/update new ones
                 let newKeys = Set(customFields.filter { !$0.key.isEmpty }.map(\.key))
                 for old in entry.customFields {
                     if !newKeys.contains(old.key) {

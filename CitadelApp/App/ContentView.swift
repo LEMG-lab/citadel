@@ -9,10 +9,13 @@ struct ContentView: View {
         Group {
             if appState.isLocked {
                 LockScreenView()
+                    .transition(.opacity.combined(with: .scale(scale: 0.98)))
             } else {
                 MainView()
+                    .transition(.opacity.combined(with: .scale(scale: 0.98)))
             }
         }
+        .animation(.easeInOut(duration: 0.25), value: appState.isLocked)
         .onAppear {
             if appState.cloudSyncWarning != nil {
                 showCloudWarning = true

@@ -40,6 +40,7 @@ struct CitadelApplication: App {
             ContentView()
                 .environment(appState)
                 .focusedValue(\.appState, appState)
+                .tint(.citadelAccent)
                 .background(WindowConfigurator())
         }
         .defaultSize(width: 800, height: 600)

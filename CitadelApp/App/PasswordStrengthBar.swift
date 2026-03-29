@@ -11,34 +11,34 @@ struct PasswordStrengthBar: View {
 
     private var color: Color {
         switch strength {
-        case .empty: return .gray
-        case .weak: return .red
-        case .fair: return .orange
-        case .good: return .yellow
-        case .strong: return .green
-        case .excellent: return .blue
+        case .empty:     return .gray
+        case .weak:      return .citadelDanger
+        case .fair:      return .citadelWarning
+        case .good:      return .yellow
+        case .strong:    return .citadelSuccess
+        case .excellent: return .citadelAccent
         }
     }
 
     private var fraction: Double {
         switch strength {
-        case .empty: return 0
-        case .weak: return 0.2
-        case .fair: return 0.4
-        case .good: return 0.6
-        case .strong: return 0.8
+        case .empty:     return 0
+        case .weak:      return 0.2
+        case .fair:      return 0.4
+        case .good:      return 0.6
+        case .strong:    return 0.8
         case .excellent: return 1.0
         }
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 2) {
+        VStack(alignment: .leading, spacing: 3) {
             GeometryReader { geo in
                 ZStack(alignment: .leading) {
                     RoundedRectangle(cornerRadius: 2)
-                        .fill(Color.gray.opacity(0.2))
+                        .fill(Color.gray.opacity(0.15))
                     RoundedRectangle(cornerRadius: 2)
-                        .fill(color)
+                        .fill(color.gradient)
                         .frame(width: geo.size.width * fraction)
                         .animation(.easeInOut(duration: 0.2), value: strength)
                 }
@@ -47,7 +47,7 @@ struct PasswordStrengthBar: View {
 
             if strength != .empty {
                 Text(strength.label)
-                    .font(.caption2)
+                    .font(.system(size: 10, weight: .medium))
                     .foregroundStyle(color)
             }
         }

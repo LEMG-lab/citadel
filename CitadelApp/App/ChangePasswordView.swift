@@ -19,30 +19,65 @@ struct ChangePasswordView: View {
     }
 
     var body: some View {
-        VStack(spacing: 16) {
-            Text("Change Master Password")
-                .font(.headline)
-
-            SecureField("Current Password", text: $currentPassword)
-                .textFieldStyle(.roundedBorder)
-                .focused($focusedField, equals: .current)
-            SecureField("New Password", text: $newPassword)
-                .textFieldStyle(.roundedBorder)
-                .focused($focusedField, equals: .new)
-            SecureField("Confirm New Password", text: $confirmPassword)
-                .textFieldStyle(.roundedBorder)
-                .focused($focusedField, equals: .confirm)
-
-            if let msg = errorMessage {
-                Text(msg).foregroundStyle(.red).font(.callout)
+        VStack(spacing: 0) {
+            // Header
+            HStack {
+                Text("Change Master Password")
+                    .font(.system(size: 15, weight: .semibold))
+                Spacer()
             }
+            .padding(.horizontal, 20)
+            .padding(.top, 16)
+            .padding(.bottom, 8)
 
-            if succeeded {
-                Text("Password changed successfully. Remember to update your physical backups.")
-                    .foregroundStyle(.green)
-                    .font(.callout)
+            Divider()
+
+            VStack(alignment: .leading, spacing: 12) {
+                SectionHeader(title: "Current")
+                SecureField(text: $currentPassword, prompt: Text("Current Password").foregroundStyle(.tertiary)) {}
+                    .textFieldStyle(.plain)
+                    .font(.system(size: 13))
+                    .padding(8)
+                    .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+                    .focused($focusedField, equals: .current)
+
+                SectionHeader(title: "New Password")
+                SecureField(text: $newPassword, prompt: Text("New Password").foregroundStyle(.tertiary)) {}
+                    .textFieldStyle(.plain)
+                    .font(.system(size: 13))
+                    .padding(8)
+                    .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+                    .focused($focusedField, equals: .new)
+
+                SecureField(text: $confirmPassword, prompt: Text("Confirm New Password").foregroundStyle(.tertiary)) {}
+                    .textFieldStyle(.plain)
+                    .font(.system(size: 13))
+                    .padding(8)
+                    .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+                    .focused($focusedField, equals: .confirm)
+
+                if let msg = errorMessage {
+                    HStack(spacing: 4) {
+                        Image(systemName: "exclamationmark.circle.fill")
+                            .font(.system(size: 12))
+                        Text(msg).font(.system(size: 12))
+                    }
+                    .foregroundStyle(Color.citadelDanger)
+                }
+
+                if succeeded {
+                    HStack(spacing: 4) {
+                        Image(systemName: "checkmark.circle.fill")
+                            .font(.system(size: 12))
+                        Text("Password changed successfully. Remember to update your physical backups.")
+                            .font(.system(size: 12))
+                    }
+                    .foregroundStyle(Color.citadelSuccess)
+                }
             }
+            .padding(20)
 
+            Spacer()
             Divider()
 
             HStack {
@@ -50,19 +85,22 @@ struct ChangePasswordView: View {
                 if succeeded {
                     Button("Done") { dismiss() }
                         .buttonStyle(.borderedProminent)
+                        .tint(.citadelAccent)
                         .keyboardShortcut(.defaultAction)
                 } else {
                     Button("Cancel") { dismiss() }
                         .keyboardShortcut(.cancelAction)
                     Button("Change Password") { validate() }
                         .buttonStyle(.borderedProminent)
+                        .tint(.citadelAccent)
                         .keyboardShortcut(.defaultAction)
                         .disabled(currentPassword.isEmpty || newPassword.isEmpty || confirmPassword.isEmpty)
                 }
             }
+            .padding(.horizontal, 20)
+            .padding(.vertical, 12)
         }
-        .padding(24)
-        .frame(width: 400)
+        .frame(width: 420, height: 360)
         .onAppear { focusedField = .current }
         .confirmationDialog(
             "Change Master Password",

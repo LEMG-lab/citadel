@@ -23,34 +23,52 @@ struct MainView: View {
             if let id = appState.selectedEntryID {
                 EntryDetailView(entryID: id)
             } else {
-                ContentUnavailableView(
-                    "No Entry Selected",
-                    systemImage: "doc.text",
-                    description: Text("Select an entry to view its details.")
-                )
+                VStack(spacing: 12) {
+                    Image(systemName: "doc.text")
+                        .font(.system(size: 36, weight: .light))
+                        .foregroundStyle(Color.citadelSecondary.opacity(0.4))
+                    Text("No Entry Selected")
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(Color.citadelSecondary)
+                    Text("Select an entry to view its details")
+                        .font(.system(size: 12))
+                        .foregroundStyle(Color.citadelSecondary.opacity(0.7))
+                }
             }
         }
         .toolbar {
             ToolbarItemGroup(placement: .primaryAction) {
-                Button("Add Entry", systemImage: "plus") {
+                Button {
                     showingAddEntry = true
+                } label: {
+                    Image(systemName: "plus")
                 }
+                .help("New entry")
+
                 Menu {
                     Button("Export CSV\u{2026}") { exportCSV() }
                     Button("Import CSV\u{2026}") { importCSV() }
                     Divider()
                     Button("Backup Vault\u{2026}") { performBackup() }
                 } label: {
-                    Label("More", systemImage: "ellipsis.circle")
+                    Image(systemName: "ellipsis.circle")
                 }
-                Button("Settings", systemImage: "gearshape") {
+                .help("More actions")
+
+                Button {
                     showingSettings = true
+                } label: {
+                    Image(systemName: "gearshape")
                 }
+                .help("Settings")
             }
             ToolbarItem(placement: .automatic) {
-                Button("Lock", systemImage: "lock") {
+                Button {
                     appState.lockVault()
+                } label: {
+                    Image(systemName: "lock")
                 }
+                .help("Lock vault")
             }
         }
         .sheet(isPresented: $showingAddEntry) {
@@ -75,7 +93,6 @@ struct MainView: View {
             Text(appState.expiredEntriesMessage ?? "")
         }
         .task {
-            // Delay to allow NavigationSplitView toolbar to fully set up
             try? await Task.sleep(for: .milliseconds(500))
             if appState.expiredEntriesMessage != nil {
                 showingExpiredAlert = true
@@ -86,7 +103,6 @@ struct MainView: View {
                 showingExpiredAlert = true
             }
         }
-        // Keyboard shortcut notifications
         .onReceive(NotificationCenter.default.publisher(for: .citadelNewEntry)) { _ in
             showingAddEntry = true
         }
@@ -128,15 +144,12 @@ struct MainView: View {
                         notes: detail.notes
                     )
                 }
-
             let csvData = CSVManager.export(entries: entries)
-
             let panel = NSSavePanel()
             panel.title = "Export Entries as CSV"
             panel.nameFieldStringValue = "citadel-export.csv"
             panel.allowedContentTypes = [.commaSeparatedText]
             guard panel.runModal() == .OK, let url = panel.url else { return }
-
             try csvData.write(to: url)
             appState.auditLogger.log(.exportCSV, detail: "\(entries.count) entries")
         } catch {
@@ -151,18 +164,15 @@ struct MainView: View {
         panel.allowedContentTypes = [.commaSeparatedText]
         panel.allowsMultipleSelection = false
         guard panel.runModal() == .OK, let url = panel.url else { return }
-
         do {
             let data = try Data(contentsOf: url)
             let entries = try CSVManager.parse(data: data)
             var count = 0
             for entry in entries {
                 _ = try appState.engine.addEntry(
-                    title: entry.title,
-                    username: entry.username,
+                    title: entry.title, username: entry.username,
                     password: Data(entry.password.utf8),
-                    url: entry.url,
-                    notes: entry.notes
+                    url: entry.url, notes: entry.notes
                 )
                 count += 1
             }
@@ -183,9 +193,7 @@ struct MainView: View {
         panel.title = "Save Vault Backup"
         panel.nameFieldStringValue = "vault-backup.kdbx"
         panel.canCreateDirectories = true
-
         guard panel.runModal() == .OK, let url = panel.url else { return }
-
         do {
             try appState.performBackup(to: url)
             backupResultMessage = "Backup saved and verified successfully."
