@@ -173,6 +173,10 @@ public final class VaultEngine: @unchecked Sendable {
         url: String,
         notes: String
     ) throws -> String {
+        try Self.validateFFIString(title, field: "title")
+        try Self.validateFFIString(username, field: "username")
+        try Self.validateFFIString(url, field: "url")
+        try Self.validateFFIString(notes, field: "notes")
         lock.lock()
         defer { lock.unlock() }
         let h = try _requireHandle()
@@ -213,6 +217,11 @@ public final class VaultEngine: @unchecked Sendable {
         url: String,
         notes: String
     ) throws {
+        try Self.validateFFIString(uuid, field: "uuid")
+        try Self.validateFFIString(title, field: "title")
+        try Self.validateFFIString(username, field: "username")
+        try Self.validateFFIString(url, field: "url")
+        try Self.validateFFIString(notes, field: "notes")
         lock.lock()
         defer { lock.unlock() }
         let h = try _requireHandle()
@@ -310,5 +319,12 @@ public final class VaultEngine: @unchecked Sendable {
     private func cString(_ ptr: UnsafeMutablePointer<CChar>?) -> String {
         guard let ptr = ptr else { return "" }
         return String(cString: ptr)
+    }
+
+    /// Reject strings containing null bytes — withCString silently truncates at \0.
+    private static func validateFFIString(_ s: String, field: String) throws {
+        if s.utf8.contains(0) {
+            throw VaultError.internalError("\(field) contains null bytes")
+        }
     }
 }

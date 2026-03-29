@@ -24,6 +24,9 @@ final class AppState {
         didSet { clipboard.clearInterval = clipboardClearTime }
     }
 
+    /// True when the vault directory appears to be inside a cloud-synced folder.
+    var cloudSyncWarning: String?
+
     // MARK: - Non-observable infrastructure
 
     let engine = VaultEngine()
@@ -52,12 +55,64 @@ final class AppState {
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         vaultPath = dir.appendingPathComponent("vault.kdbx").path
 
+        // Prevent Spotlight from indexing the vault directory
+        let noIndex = dir.appendingPathComponent(".metadata_never_index")
+        if !FileManager.default.fileExists(atPath: noIndex.path) {
+            FileManager.default.createFile(atPath: noIndex.path, contents: nil)
+        }
+
         // Attempt crash recovery if vault is missing but backup files exist
         recoverVaultIfNeeded()
+
+        // Warn if vault directory is inside a cloud-synced folder
+        cloudSyncWarning = Self.detectCloudSync(vaultDir: dir.path)
 
         autoLockManager = AutoLockManager { [weak self] in
             self?.lockVault()
         }
+    }
+
+    /// Check if the vault directory is inside a known cloud sync path.
+    private static func detectCloudSync(vaultDir: String) -> String? {
+        let home = FileManager.default.homeDirectoryForCurrentUser.path
+        let knownSyncPaths = [
+            home + "/Library/Mobile Documents",   // iCloud Drive
+            home + "/Dropbox",
+            home + "/Google Drive",
+            home + "/OneDrive",
+        ]
+
+        for syncPath in knownSyncPaths {
+            if vaultDir.hasPrefix(syncPath) {
+                return "Your vault is inside a cloud-synced folder (\(syncPath)). "
+                    + "This means your vault file is uploaded to remote servers, and concurrent "
+                    + "edits from other devices can cause silent data loss. Consider moving your "
+                    + "vault to a non-synced location."
+            }
+        }
+
+        // Check if ~/Documents is synced via iCloud "Desktop & Documents"
+        // by looking for the com.apple.bird extended attribute
+        let docsPath = home + "/Documents"
+        if vaultDir.hasPrefix(docsPath) {
+            let mobileDocs = home + "/Library/Mobile Documents/com~apple~CloudDocs/Documents"
+            let fm = FileManager.default
+            // If ~/Documents is a symlink into Mobile Documents, iCloud sync is active
+            if let resolved = try? fm.destinationOfSymbolicLink(atPath: docsPath),
+               resolved.contains("Mobile Documents") {
+                return "Your ~/Documents folder is synced to iCloud. Your vault file may be "
+                    + "uploaded to Apple servers. Consider disabling 'Desktop & Documents Folders' "
+                    + "in System Settings > iCloud > iCloud Drive, or move the vault elsewhere."
+            }
+            // Also check if the iCloud mirror of Documents exists
+            if fm.fileExists(atPath: mobileDocs) {
+                return "iCloud 'Desktop & Documents Folders' may be enabled. Your vault file "
+                    + "could be synced to Apple servers. Consider checking System Settings > "
+                    + "iCloud > iCloud Drive, or moving the vault to a non-synced location."
+            }
+        }
+
+        return nil
     }
 
     /// If vault.kdbx is missing but .prev or .tmp exist, recover the best candidate.
@@ -67,16 +122,33 @@ final class AppState {
 
         // Prefer .prev (last validated good copy) over .tmp (may be incomplete)
         let prevPath = vaultPath + ".prev"
-        if fm.fileExists(atPath: prevPath) {
+        if fm.fileExists(atPath: prevPath), Self.looksLikeKDBX(atPath: prevPath) {
             try? fm.copyItem(atPath: prevPath, toPath: vaultPath)
             return
         }
 
-        // Fall back to .tmp (might be valid if crash happened after write)
+        // Fall back to .tmp — only promote if it passes structural checks
         let tmpPath = vaultPath + ".tmp"
-        if fm.fileExists(atPath: tmpPath) {
+        if fm.fileExists(atPath: tmpPath), Self.looksLikeKDBX(atPath: tmpPath) {
             _ = rename(tmpPath, vaultPath)
         }
+    }
+
+    /// KDBX4 signature: primary 0x9AA2D903 + secondary 0xB54BFB67 (little-endian).
+    private static let kdbxMagic: [UInt8] = [0x03, 0xD9, 0xA2, 0x9A, 0x67, 0xFB, 0x4B, 0xB5]
+
+    /// Check that a file is at least 1024 bytes and starts with valid KDBX magic.
+    /// This is a structural sanity check — full validation requires the password.
+    private static func looksLikeKDBX(atPath path: String) -> Bool {
+        guard let attrs = try? FileManager.default.attributesOfItem(atPath: path),
+              let size = attrs[.size] as? UInt64,
+              size >= 1024 else {
+            return false
+        }
+        guard let fh = FileHandle(forReadingAtPath: path) else { return false }
+        defer { try? fh.close() }
+        let header = fh.readData(ofLength: 8)
+        return header.count == 8 && header.elementsEqual(kdbxMagic)
     }
 
     // MARK: - Vault lifecycle
@@ -143,13 +215,29 @@ final class AppState {
         do {
             try VaultPersistence.atomicSave(engine: engine, vaultPath: vaultPath, password: newPassword)
         } catch {
-            // Restore: close engine, put backup back, reopen with old password
+            // Attempt to restore from backup
             engine.close()
             let fm = FileManager.default
-            try? fm.removeItem(atPath: vaultPath)
-            try? fm.moveItem(at: backupURL, to: URL(fileURLWithPath: vaultPath))
-            try? engine.open(path: vaultPath, password: currentPassword)
-            self.currentPassword = currentPassword
+            var restoreFailed = false
+
+            do {
+                if fm.fileExists(atPath: vaultPath) {
+                    try fm.removeItem(atPath: vaultPath)
+                }
+                try fm.moveItem(at: backupURL, to: URL(fileURLWithPath: vaultPath))
+                try engine.open(path: vaultPath, password: currentPassword)
+                self.currentPassword = currentPassword
+            } catch {
+                restoreFailed = true
+            }
+
+            if restoreFailed {
+                throw VaultError.internalError(
+                    "Password change failed and restore also failed. "
+                    + "Your vault backup is at: \(backupURL.path). "
+                    + "Use it to recover manually."
+                )
+            }
             throw error
         }
 

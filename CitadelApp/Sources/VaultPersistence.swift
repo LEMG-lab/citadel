@@ -38,9 +38,18 @@ public final class VaultPersistence: Sendable {
         // 2. F_FULLFSYNC the temp file
         try fullFsync(path: tmpPath)
 
-        // 3. Validate the temp file
+        // 3. Validate the temp file and verify entry count
         do {
-            try VaultEngine.validate(path: tmpPath, password: password)
+            let verifyEngine = VaultEngine()
+            try verifyEngine.open(path: tmpPath, password: password)
+            let savedCount = try verifyEngine.listEntries().count
+            verifyEngine.close()
+
+            let expectedCount = try engine.listEntries().count
+            if savedCount != expectedCount {
+                try? fm.removeItem(atPath: tmpPath)
+                throw VaultError.validationFailed
+            }
         } catch {
             // Validation failed — remove the temp file and propagate
             try? fm.removeItem(atPath: tmpPath)

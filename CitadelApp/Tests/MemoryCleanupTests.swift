@@ -129,4 +129,51 @@ struct MemoryCleanupTests {
         #expect(!detail2.password.isEmpty, "Engine should still have the password")
         #expect(detail2.password != passwordCopy, "Fresh fetch should differ from zeroed copy")
     }
+
+    @Test("Null bytes in strings are rejected before FFI")
+    func nullByteRejection() throws {
+        let engine = VaultEngine()
+        try engine.create(password: Data("test123".utf8))
+        defer { engine.close() }
+
+        // Title with embedded null byte
+        #expect(throws: VaultError.self) {
+            _ = try engine.addEntry(
+                title: "before\0after", username: "u",
+                password: Data("pw".utf8), url: "", notes: ""
+            )
+        }
+
+        // Username with embedded null byte
+        #expect(throws: VaultError.self) {
+            _ = try engine.addEntry(
+                title: "ok", username: "user\0name",
+                password: Data("pw".utf8), url: "", notes: ""
+            )
+        }
+
+        // URL with embedded null byte
+        #expect(throws: VaultError.self) {
+            _ = try engine.addEntry(
+                title: "ok", username: "u",
+                password: Data("pw".utf8), url: "https://\0evil.com", notes: ""
+            )
+        }
+
+        // Notes with embedded null byte
+        #expect(throws: VaultError.self) {
+            _ = try engine.addEntry(
+                title: "ok", username: "u",
+                password: Data("pw".utf8), url: "", notes: "line1\0line2"
+            )
+        }
+
+        // Clean strings should still work
+        let uuid = try engine.addEntry(
+            title: "Normal", username: "user",
+            password: Data("pw".utf8), url: "https://ok.com", notes: "fine"
+        )
+        let detail = try engine.getEntry(uuid: uuid)
+        #expect(detail.title == "Normal")
+    }
 }

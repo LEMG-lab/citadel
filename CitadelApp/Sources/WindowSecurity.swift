@@ -4,17 +4,39 @@ import AppKit
 ///
 /// - Sets `sharingType = .none` to prevent screenshots and screen sharing
 /// - Ensures no sensitive data appears in window titles
+/// - Monitors for new windows (sheets, dialogs) and secures them automatically
+@MainActor
 public enum WindowSecurity {
 
-    /// Apply security settings to a window.
-    /// Call this in the window's lifecycle (e.g., `onAppear` or `NSWindowDelegate`).
-    @MainActor
-    public static func apply(to window: NSWindow) {
-        // Prevent screen capture, screen sharing, and AirPlay mirroring
-        // from seeing window content.
-        window.sharingType = .none
+    private nonisolated(unsafe) static var observer: NSObjectProtocol?
 
-        // Use a generic title that reveals nothing about vault contents.
+    /// Apply security settings to a window.
+    public static func apply(to window: NSWindow) {
+        window.sharingType = .none
         window.title = "Citadel"
+    }
+
+    /// Monitor for new windows (sheets, password generator, etc.) and apply
+    /// sharingType = .none to all of them. SwiftUI sheets create separate
+    /// NSWindow instances that don't inherit the parent's sharingType.
+    public static func startMonitoringNewWindows() {
+        guard observer == nil else { return }
+
+        // Secure all existing windows first
+        for window in NSApplication.shared.windows {
+            window.sharingType = .none
+        }
+
+        // Watch for new windows becoming visible
+        observer = NotificationCenter.default.addObserver(
+            forName: NSWindow.didBecomeKeyNotification,
+            object: nil,
+            queue: .main
+        ) { notification in
+            guard let window = notification.object as? NSWindow else { return }
+            DispatchQueue.main.async {
+                window.sharingType = .none
+            }
+        }
     }
 }

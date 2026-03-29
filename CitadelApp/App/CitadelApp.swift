@@ -25,7 +25,8 @@ struct CitadelApplication: App {
     }
 }
 
-/// Applies WindowSecurity settings to the NSWindow backing the SwiftUI view.
+/// Applies WindowSecurity settings to the NSWindow backing the SwiftUI view
+/// and monitors for new windows (sheets, dialogs) to secure them too.
 private struct WindowConfigurator: NSViewRepresentable {
     func makeNSView(context: Context) -> NSView {
         let view = NSView()
@@ -33,6 +34,8 @@ private struct WindowConfigurator: NSViewRepresentable {
             if let window = view.window {
                 WindowSecurity.apply(to: window)
             }
+            // Observe all new windows (sheets, password generator, etc.)
+            WindowSecurity.startMonitoringNewWindows()
         }
         return view
     }
