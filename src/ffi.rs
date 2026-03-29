@@ -66,6 +66,7 @@ pub extern "C" fn vault_open(
     if path.is_null() || handle_out.is_null() {
         return VaultResult::InternalError;
     }
+    crate::memory::disable_core_dumps();
     let result = catch_unwind(std::panic::AssertUnwindSafe(|| {
         let path_str = unsafe { cstr_to_str(path) };
         let pw = unsafe { read_password(password_ptr, password_len) };
@@ -92,6 +93,7 @@ pub extern "C" fn vault_create(
     if handle_out.is_null() {
         return VaultResult::InternalError;
     }
+    crate::memory::disable_core_dumps();
     let result = catch_unwind(std::panic::AssertUnwindSafe(|| {
         let pw = unsafe { read_password(password_ptr, password_len) };
         match VaultState::create(&pw) {

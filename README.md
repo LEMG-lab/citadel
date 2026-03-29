@@ -60,7 +60,7 @@ A personal password vault for macOS with a Rust crypto core and native SwiftUI i
 cargo build --release --target aarch64-apple-darwin
 ```
 
-### Build and run the app
+### Build and run the app (development)
 
 ```bash
 cd CitadelApp
@@ -69,6 +69,14 @@ swift run Citadel
 ```
 
 Or open `CitadelApp/Package.swift` in Xcode and run the `Citadel` scheme.
+
+### Build Citadel.app with hardened runtime (recommended)
+
+```bash
+./scripts/build-app.sh
+```
+
+This builds Rust + Swift in release mode, creates `Citadel.app`, and signs it with hardened runtime (ad-hoc). Hardened runtime blocks debugger attachment, dylib injection, and DYLD environment variables. Open with `open Citadel.app` or drag to `/Applications`.
 
 ### Run tests
 
@@ -97,7 +105,7 @@ If Citadel ever stops working, open `vault.kdbx` with [KeePassXC](https://keepas
 
 ## Development
 
-This project was built in a single development session with AI-assisted development (Claude), then audited across 3 rounds by 6 independent AI models. All identified security issues were resolved and verified with 66 automated tests (38 Rust + 28 Swift) covering unit, integration, interop, negative corpus, stress/fuzz, and memory cleanup scenarios.
+This project was built in a single development session with AI-assisted development (Claude), then audited across 5 rounds by 6 independent AI models. All identified security issues were resolved and verified with 70 automated tests (41 Rust + 29 Swift) covering unit, integration, interop, negative corpus, stress/fuzz, memory cleanup, and mlock/core-dump scenarios.
 
 ## License
 

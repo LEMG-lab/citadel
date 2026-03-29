@@ -17,6 +17,8 @@ pub struct VaultState {
 
 impl Drop for VaultState {
     fn drop(&mut self) {
+        // munlock before Zeroizing zeros and deallocates the password buffer
+        Self::unlock_password(&self.password);
         // password is Zeroizing and will be zeroed on drop automatically.
         // Database fields don't implement Zeroize, but protected values
         // (passwords) in keepass-rs use SecretBox which zeros on drop.
@@ -24,6 +26,20 @@ impl Drop for VaultState {
 }
 
 impl VaultState {
+    /// Pin a password buffer in RAM so it cannot be paged to swap.
+    fn lock_password(pw: &Zeroizing<Vec<u8>>) {
+        if !pw.is_empty() {
+            crate::memory::lock_buffer(pw.as_ptr(), pw.len());
+        }
+    }
+
+    /// Release a previously pinned password buffer.
+    fn unlock_password(pw: &Zeroizing<Vec<u8>>) {
+        if !pw.is_empty() {
+            crate::memory::unlock_buffer(pw.as_ptr(), pw.len());
+        }
+    }
+
     /// Open an existing KDBX file.
     pub fn open(path: &str, password: &[u8]) -> Result<Self, VaultResult> {
         let password_str = std::str::from_utf8(password).map_err(|_| VaultResult::InternalError)?;
@@ -34,10 +50,9 @@ impl VaultState {
             })?;
         let key = DatabaseKey::new().with_password(password_str);
         let db = Database::open(&mut file, key).map_err(map_open_error)?;
-        Ok(VaultState {
-            db,
-            password: Zeroizing::new(password.to_vec()),
-        })
+        let pw = Zeroizing::new(password.to_vec());
+        Self::lock_password(&pw);
+        Ok(VaultState { db, password: pw })
     }
 
     /// Create a new empty KDBX 4 vault with Argon2id / ChaCha20.
@@ -99,10 +114,9 @@ impl VaultState {
         db.root.enable_searching = Some(true);
         db.root.last_top_visible_entry = Some(nil);
 
-        Ok(VaultState {
-            db,
-            password: Zeroizing::new(password.to_vec()),
-        })
+        let pw = Zeroizing::new(password.to_vec());
+        Self::lock_password(&pw);
+        Ok(VaultState { db, password: pw })
     }
 
     /// Save the database to the given path using the stored password.
@@ -144,8 +158,10 @@ impl VaultState {
         }
         let _check =
             std::str::from_utf8(new_password).map_err(|_| VaultResult::InternalError)?;
+        Self::unlock_password(&self.password);
         self.password.zeroize();
         self.password = Zeroizing::new(new_password.to_vec());
+        Self::lock_password(&self.password);
         Ok(())
     }
 

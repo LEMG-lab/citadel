@@ -3,19 +3,22 @@
 ## What Citadel protects against
 - Offline brute force of stolen vault file (Argon2id 256MB, ChaCha20)
 - Data loss from interrupted saves (atomic save pipeline with snapshots)
-- Accidental plaintext exposure (clipboard auto-clear, concealed type, auto-lock)
+- Accidental plaintext exposure (clipboard auto-clear, concealed type, auto-lock, press-and-hold reveal)
 - App lock-in (KDBX format, openable by KeePassXC and Strongbox)
 - Silent data corruption (post-write validation with entry count verification, HMAC verification)
 - Spotlight indexing of vault directory (.metadata_never_index)
 - Screen capture of vault windows (sharingType = .none on all windows including sheets)
 - Inactivity auto-lock (configurable timeout, plus immediate lock on sleep, screensaver, and fast user switch)
+- Sensitive memory paging to swap (mlock on master password buffer in Rust core)
+- Core dumps containing secrets (RLIMIT_CORE = 0 set on first FFI call)
+- Debugger attachment and dylib injection (hardened runtime when built as .app bundle)
 
 ## What Citadel does NOT protect against
 - A fully compromised endpoint (keylogger, screen recorder, memory dump while unlocked)
 - Clipboard managers that ignore the ConcealedType convention
 - Physical access to an unlocked Mac with the vault open
 - Weak master passwords (the vault's security is bounded by password entropy)
-- macOS swap/hibernation writing sensitive memory to disk (partially mitigated by Rust zeroize, not fully preventable)
+- macOS swap/hibernation writing sensitive memory to disk (mitigated by mlock on password buffer + Rust zeroize; Database struct internals may still be paged)
 - Screen recording by apps with Accessibility permissions
 - Time Machine backing up .prev snapshot files and vault-backup-*.kdbx files (see below)
 - Universal Clipboard syncing copied passwords to other Apple devices on the same iCloud account (ConcealedType does not prevent this; disable Handoff in System Settings if this concerns you)
@@ -40,7 +43,7 @@ The `sanitize_autotype` function drops AutoType configuration blocks that contai
 
 ### Other limitations
 - Master password must be valid UTF-8 (keepass-rs limitation)
-- App runs without App Sandbox (SPM executable, not .app bundle)
+- App runs without App Sandbox (hardened runtime blocks debuggers and dylib injection, but full sandbox requires container directory migration — planned follow-up)
 - The keepass-rs crate (v0.10) is pre-1.0 with KDBX4 write support marked as feature-gated
 - Cloud sync detection checks common paths but may not detect all sync services
 

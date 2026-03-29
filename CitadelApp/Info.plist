@@ -3,19 +3,23 @@
 <plist version="1.0">
 <dict>
     <key>CFBundleName</key>
-    <string>CitadelApp</string>
+    <string>Citadel</string>
+    <key>CFBundleDisplayName</key>
+    <string>Citadel</string>
     <key>CFBundleIdentifier</key>
-    <string>com.citadel.app</string>
+    <string>com.lemg-lab.citadel</string>
     <key>CFBundleVersion</key>
     <string>1</string>
     <key>CFBundleShortVersionString</key>
-    <string>0.1.0</string>
+    <string>1.0.0</string>
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleExecutable</key>
-    <string>CitadelApp</string>
+    <string>Citadel</string>
     <key>LSMinimumSystemVersion</key>
     <string>15.0</string>
+    <key>NSHighResolutionCapable</key>
+    <true/>
     <key>NSApplicationSupportsSecureRestorableState</key>
     <true/>
 </dict>
