@@ -75,6 +75,26 @@ struct CitadelCommands: Commands {
             .disabled(appState?.isLocked ?? true)
         }
 
+        // Help menu
+        CommandGroup(replacing: .help) {
+            Button("Citadel User Guide") {
+                let guideURL: URL
+                // Check repo location first, then bundle
+                let repoPath = (ProcessInfo.processInfo.environment["HOME"] ?? NSHomeDirectory())
+                    + "/Projects/citadel/GUIDE.md"
+                if FileManager.default.fileExists(atPath: repoPath) {
+                    guideURL = URL(fileURLWithPath: repoPath)
+                } else {
+                    let bundlePath = Bundle.main.bundlePath
+                    let appSupport = (bundlePath as NSString).deletingLastPathComponent
+                    let fallback = (appSupport as NSString).appendingPathComponent("GUIDE.md")
+                    guideURL = URL(fileURLWithPath: fallback)
+                }
+                NSWorkspace.shared.open(guideURL)
+            }
+            .keyboardShortcut("?", modifiers: [.command])
+        }
+
         // Custom commands
         CommandMenu("Vault") {
             Button("Lock Vault") {

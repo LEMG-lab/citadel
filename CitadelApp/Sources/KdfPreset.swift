@@ -40,10 +40,10 @@ public enum KdfPreset: String, CaseIterable, Identifiable {
     /// UserDefaults key.
     private static let defaultsKey = "citadel.kdfPreset"
 
-    /// Load saved preset (defaults to .standard).
+    /// Load saved preset (defaults to .maximum).
     public static var saved: KdfPreset {
-        let raw = UserDefaults.standard.string(forKey: defaultsKey) ?? "standard"
-        return KdfPreset(rawValue: raw) ?? .standard
+        let raw = UserDefaults.standard.string(forKey: defaultsKey) ?? "maximum"
+        return KdfPreset(rawValue: raw) ?? .maximum
     }
 
     /// Persist the selected preset.
