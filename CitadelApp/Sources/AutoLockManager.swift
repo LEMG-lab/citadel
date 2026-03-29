@@ -5,6 +5,7 @@ import Foundation
 ///
 /// Monitors:
 /// - User inactivity (default 5 minutes, configurable)
+/// - App losing focus (`didResignActiveNotification`) — prevents Mission Control thumbnail exposure
 /// - System sleep (`willSleepNotification`)
 /// - Fast user switch (`sessionDidResignActiveNotification`)
 /// - Screen saver activation (`screensaversDidBecomeActiveNotification`)
@@ -68,6 +69,18 @@ public final class AutoLockManager {
             }
         )
 
+        // Lock immediately when the app loses focus (Mission Control, Cmd+Tab,
+        // clicking another window). This ensures the lock screen is visible in
+        // Mission Control thumbnails — sharingType alone does not prevent the
+        // WindowServer from compositing vault content into thumbnails.
+        observers.append(
+            NotificationCenter.default.addObserver(
+                forName: NSApplication.didResignActiveNotification, object: nil, queue: .main
+            ) { [weak self] _ in
+                Task { @MainActor in self?.lock() }
+            }
+        )
+
         // Global event monitor for user activity tracking
         eventMonitor = NSEvent.addGlobalMonitorForEvents(
             matching: [.leftMouseDown, .rightMouseDown, .keyDown, .scrollWheel, .mouseMoved]
@@ -84,9 +97,11 @@ public final class AutoLockManager {
         inactivityTimer = nil
         let ws = NSWorkspace.shared.notificationCenter
         let dc = DistributedNotificationCenter.default()
+        let nc = NotificationCenter.default
         for observer in observers {
             ws.removeObserver(observer)
             dc.removeObserver(observer)
+            nc.removeObserver(observer)
         }
         observers.removeAll()
         if let monitor = eventMonitor {

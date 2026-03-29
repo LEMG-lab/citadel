@@ -8,6 +8,7 @@
 - Silent data corruption (post-write validation with entry count verification, HMAC verification)
 - Spotlight indexing of vault directory (.metadata_never_index)
 - Screen capture of vault windows (sharingType = .none on all windows including sheets)
+- Vault exposure on app switch (auto-locks when app loses focus, so Cmd+Tab and app switching show the lock screen)
 
 ## What Citadel does NOT protect against
 - A fully compromised endpoint (keylogger, screen recorder, memory dump while unlocked)
@@ -21,6 +22,7 @@
 - Swift/SwiftUI password strings persisting in freed heap memory after deallocation (see below)
 - Clipboard not being cleared if the app is force-quit (kill -9) or crashes (the clear timer is in-process)
 - Cloud sync services (iCloud, Dropbox, etc.) uploading the vault if stored in a synced folder (a warning is shown on launch, but the user must move the vault themselves)
+- Mission Control (F3) may briefly show vault content in window thumbnails before auto-lock activates. This requires physical access to an unlocked Mac.
 
 ## Accepted limitations
 
