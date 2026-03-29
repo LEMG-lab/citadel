@@ -168,7 +168,8 @@ final class AppState {
         entries = []
         selectedEntryID = nil
         errorMessage = nil
-        clipboard.forceClear()
+        // Clipboard timer manages its own lifecycle — don't forceClear here
+        // so the user can still paste after the vault locks on inactivity/sleep.
         isLocked = true
     }
 
@@ -227,6 +228,13 @@ final class AppState {
         }
 
         self.currentPassword = newPassword
+
+        // Password change succeeded — delete the auto-backup that was encrypted
+        // with the old password. Leaving it around lets an attacker brute-force
+        // the weaker old password to recover vault contents.
+        let fm = FileManager.default
+        try? fm.removeItem(at: backupURL)
+        try? fm.removeItem(at: backupURL.appendingPathExtension("sha256"))
     }
 
     // MARK: - Backup

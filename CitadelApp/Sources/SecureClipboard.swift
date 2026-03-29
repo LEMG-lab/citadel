@@ -68,16 +68,16 @@ public final class SecureClipboard {
 
         trackedChangeCount = pb.changeCount
 
-        // Cancel any existing timer and start a new one
+        // Cancel any existing timer and start a new one.
+        // Use .common mode so the timer fires during modal dialogs and menu tracking.
         clearTimer?.invalidate()
-        clearTimer = Timer.scheduledTimer(
-            withTimeInterval: clearInterval,
-            repeats: false
-        ) { [weak self] _ in
+        let timer = Timer(timeInterval: clearInterval, repeats: false) { [weak self] _ in
             Task { @MainActor in
                 self?.autoClear()
             }
         }
+        RunLoop.current.add(timer, forMode: .common)
+        clearTimer = timer
     }
 
     /// Clear the clipboard only if it still contains what we put there.

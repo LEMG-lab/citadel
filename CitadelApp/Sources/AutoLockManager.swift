@@ -5,7 +5,6 @@ import Foundation
 ///
 /// Monitors:
 /// - User inactivity (default 5 minutes, configurable)
-/// - App losing focus (`didResignActiveNotification`) — prevents Mission Control thumbnail exposure
 /// - System sleep (`willSleepNotification`)
 /// - Fast user switch (`sessionDidResignActiveNotification`)
 /// - Screen saver activation (`screensaversDidBecomeActiveNotification`)
@@ -32,6 +31,7 @@ public final class AutoLockManager {
     private var inactivityTimer: Timer?
     private var observers: [NSObjectProtocol] = []
     private var eventMonitor: Any?
+    private var localEventMonitor: Any?
 
     /// Create an auto-lock manager.
     ///
@@ -69,23 +69,16 @@ public final class AutoLockManager {
             }
         )
 
-        // Lock immediately when the app loses focus (Mission Control, Cmd+Tab,
-        // clicking another window). This ensures the lock screen is visible in
-        // Mission Control thumbnails — sharingType alone does not prevent the
-        // WindowServer from compositing vault content into thumbnails.
-        observers.append(
-            NotificationCenter.default.addObserver(
-                forName: NSApplication.didResignActiveNotification, object: nil, queue: .main
-            ) { [weak self] _ in
-                Task { @MainActor in self?.lock() }
-            }
-        )
-
-        // Global event monitor for user activity tracking
-        eventMonitor = NSEvent.addGlobalMonitorForEvents(
-            matching: [.leftMouseDown, .rightMouseDown, .keyDown, .scrollWheel, .mouseMoved]
-        ) { [weak self] _ in
+        // Global event monitor for user activity in OTHER apps
+        let mask: NSEvent.EventTypeMask = [.leftMouseDown, .rightMouseDown, .keyDown, .scrollWheel, .mouseMoved]
+        eventMonitor = NSEvent.addGlobalMonitorForEvents(matching: mask) { [weak self] _ in
             Task { @MainActor in self?.recordActivity() }
+        }
+
+        // Local event monitor for user activity INSIDE this app
+        localEventMonitor = NSEvent.addLocalMonitorForEvents(matching: mask) { [weak self] event in
+            Task { @MainActor in self?.recordActivity() }
+            return event
         }
 
         resetInactivityTimer()
@@ -108,6 +101,10 @@ public final class AutoLockManager {
             NSEvent.removeMonitor(monitor)
             eventMonitor = nil
         }
+        if let monitor = localEventMonitor {
+            NSEvent.removeMonitor(monitor)
+            localEventMonitor = nil
+        }
     }
 
     /// Call this on any user interaction to reset the inactivity timer.
@@ -126,11 +123,11 @@ public final class AutoLockManager {
 
     private func resetInactivityTimer() {
         inactivityTimer?.invalidate()
-        inactivityTimer = Timer.scheduledTimer(
-            withTimeInterval: timeout,
-            repeats: false
-        ) { [weak self] _ in
+        let timer = Timer(timeInterval: timeout, repeats: false) { [weak self] _ in
             Task { @MainActor in self?.lock() }
         }
+        // Use .common so the timer fires during modal dialogs and menu tracking
+        RunLoop.current.add(timer, forMode: .common)
+        inactivityTimer = timer
     }
 }
