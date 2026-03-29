@@ -47,6 +47,11 @@ typedef struct CEntryListItem {
     char *title;
     char *username;
     char *url;
+    char *group;
+    /**
+     * Unix timestamp of expiry. 0 means no expiry set.
+     */
+    int64_t expiry_time;
 } CEntryListItem;
 
 /**
@@ -71,6 +76,10 @@ typedef struct CEntryData {
     char *url;
     char *notes;
     char *otp_uri;
+    /**
+     * Unix timestamp of expiry. 0 means no expiry set.
+     */
+    int64_t expiry_time;
 } CEntryData;
 
 /**
@@ -141,6 +150,8 @@ enum VaultResult vault_add_entry(void *handle,
                                  const char *url,
                                  const char *notes,
                                  const char *otp_uri,
+                                 const char *group,
+                                 int64_t expiry_time,
                                  char **uuid_out);
 
 enum VaultResult vault_update_entry(void *handle,
@@ -151,9 +162,27 @@ enum VaultResult vault_update_entry(void *handle,
                                     uint32_t password_len,
                                     const char *url,
                                     const char *notes,
-                                    const char *otp_uri);
+                                    const char *otp_uri,
+                                    int64_t expiry_time);
 
 enum VaultResult vault_delete_entry(void *handle, const char *uuid_str);
+
+/**
+ * List all group paths in the vault. Returns a null-terminated array of C strings.
+ * Free with `group_list_free`.
+ */
+enum VaultResult vault_list_groups(void *handle, char ***groups_out, uint32_t *count_out);
+
+/**
+ * Free a group list returned by `vault_list_groups`.
+ */
+void group_list_free(char **groups, uint32_t count);
+
+/**
+ * Permanently remove all entries in the Recycle Bin. Returns the number of
+ * entries removed via `count_out` (set to 0 if no Recycle Bin exists).
+ */
+enum VaultResult vault_empty_recyclebin(void *handle, uint32_t *count_out);
 
 /**
  * Generate a random password of `length` bytes into `buf_out`.

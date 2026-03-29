@@ -12,6 +12,7 @@ struct MainView: View {
     @State private var showingBackupResult = false
     @State private var importResultMessage: String?
     @State private var showingImportResult = false
+    @State private var showingExpiredAlert = false
 
     var body: some View {
         @Bindable var appState = appState
@@ -67,6 +68,21 @@ struct MainView: View {
             Button("OK") {}
         } message: {
             Text(importResultMessage ?? "")
+        }
+        .alert("Expired Passwords", isPresented: $showingExpiredAlert) {
+            Button("OK") {}
+        } message: {
+            Text(appState.expiredEntriesMessage ?? "")
+        }
+        .onAppear {
+            if appState.expiredEntriesMessage != nil {
+                showingExpiredAlert = true
+            }
+        }
+        .onChange(of: appState.expiredEntriesMessage) { _, newValue in
+            if newValue != nil {
+                showingExpiredAlert = true
+            }
         }
     }
 

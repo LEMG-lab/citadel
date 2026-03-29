@@ -30,6 +30,9 @@ final class AppState {
     /// True while a long-running vault operation (open/create/save) is in progress.
     var isLoading = false
 
+    /// Number of entries that have expired or are expiring within 7 days.
+    var expiredEntriesMessage: String?
+
     // MARK: - Non-observable infrastructure
 
     let engine = VaultEngine()
@@ -158,6 +161,7 @@ final class AppState {
         autoLockManager?.start()
         biometricManager.recordFullAuth()
         auditLogger.log(.unlock)
+        checkExpiredEntries()
     }
 
     /// Async unlock — runs Argon2id off the main thread.
@@ -177,6 +181,7 @@ final class AppState {
         autoLockManager?.start()
         biometricManager.recordFullAuth()
         auditLogger.log(.unlock)
+        checkExpiredEntries()
     }
 
     func createVault(password: Data, keyfilePath: String? = nil) throws {
@@ -239,6 +244,30 @@ final class AppState {
 
     func refreshEntries() throws {
         entries = try engine.listEntries()
+    }
+
+    /// Check for expired entries and set a notification message.
+    func checkExpiredEntries() {
+        let now = Date()
+        let expired = entries.filter { entry in
+            guard let expiry = entry.expiryDate else { return false }
+            return expiry < now
+        }.count
+        if expired > 0 {
+            expiredEntriesMessage = "\(expired) password\(expired == 1 ? " has" : "s have") expired"
+        } else {
+            expiredEntriesMessage = nil
+        }
+    }
+
+    // MARK: - Recycle Bin
+
+    @discardableResult
+    func emptyRecycleBin() throws -> Int {
+        let count = try engine.emptyRecycleBin()
+        try save()
+        auditLogger.log(.emptyRecycleBin)
+        return count
     }
 
     // MARK: - Password change

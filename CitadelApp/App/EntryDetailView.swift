@@ -90,6 +90,29 @@ struct EntryDetailView: View {
                 }
             }
 
+            if let expiry = entry.expiryDate {
+                Section("Expiration") {
+                    LabeledContent("Expires") {
+                        HStack {
+                            if expiry < Date() {
+                                Image(systemName: "circle.fill")
+                                    .foregroundStyle(.red)
+                                    .font(.caption2)
+                                Text("Expired")
+                                    .foregroundStyle(.red)
+                            } else if expiry < Date().addingTimeInterval(7 * 24 * 3600) {
+                                Image(systemName: "circle.fill")
+                                    .foregroundStyle(.orange)
+                                    .font(.caption2)
+                                Text("Expiring soon")
+                                    .foregroundStyle(.orange)
+                            }
+                            Text(expiry, style: .date)
+                        }
+                    }
+                }
+            }
+
             if !entry.otpURI.isEmpty, TOTPGenerator(uri: entry.otpURI) != nil {
                 Section("Two-Factor Authentication") {
                     LabeledContent("TOTP Code") {

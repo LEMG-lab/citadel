@@ -9,7 +9,7 @@ public struct TOTPGenerator: Sendable {
     public let digits: Int
     public let algorithm: Algorithm
 
-    public enum Algorithm: String {
+    public enum Algorithm: String, Sendable {
         case sha1 = "SHA1"
         case sha256 = "SHA256"
         case sha512 = "SHA512"

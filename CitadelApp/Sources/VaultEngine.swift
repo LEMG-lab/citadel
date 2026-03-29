@@ -159,7 +159,9 @@ public final class VaultEngine: @unchecked Sendable {
                 id: cString(item.uuid),
                 title: cString(item.title),
                 username: cString(item.username),
-                url: cString(item.url)
+                url: cString(item.url),
+                group: cString(item.group),
+                expiryDate: item.expiry_time > 0 ? Date(timeIntervalSince1970: TimeInterval(item.expiry_time)) : nil
             ))
         }
         return entries
@@ -195,7 +197,8 @@ public final class VaultEngine: @unchecked Sendable {
             password: passwordData,
             url: cString(entry.url),
             notes: cString(entry.notes),
-            otpURI: cString(entry.otp_uri)
+            otpURI: cString(entry.otp_uri),
+            expiryDate: entry.expiry_time > 0 ? Date(timeIntervalSince1970: TimeInterval(entry.expiry_time)) : nil
         )
     }
 
@@ -206,29 +209,36 @@ public final class VaultEngine: @unchecked Sendable {
         password: Data,
         url: String,
         notes: String,
-        otpURI: String = ""
+        otpURI: String = "",
+        group: String = "",
+        expiryDate: Date? = nil
     ) throws -> String {
         try Self.validateFFIString(title, field: "title")
         try Self.validateFFIString(username, field: "username")
         try Self.validateFFIString(url, field: "url")
         try Self.validateFFIString(notes, field: "notes")
+        if !group.isEmpty { try Self.validateFFIString(group, field: "group") }
         lock.lock()
         defer { lock.unlock() }
         let h = try _requireHandle()
         var uuidPtr: UnsafeMutablePointer<CChar>?
+        let expiry: Int64 = expiryDate.map { Int64($0.timeIntervalSince1970) } ?? 0
 
         let result = title.withCString { cTitle in
             username.withCString { cUser in
                 url.withCString { cUrl in
                     notes.withCString { cNotes in
                         otpURI.withCString { cOtp in
-                            password.withUnsafeBytes { buf -> VaultResult in
-                                let ptr = buf.baseAddress?.assumingMemoryBound(to: UInt8.self)
-                                return vault_add_entry(
-                                    h, cTitle, cUser,
-                                    ptr, UInt32(password.count),
-                                    cUrl, cNotes, cOtp, &uuidPtr
-                                )
+                            group.withCString { cGroup in
+                                password.withUnsafeBytes { buf -> VaultResult in
+                                    let ptr = buf.baseAddress?.assumingMemoryBound(to: UInt8.self)
+                                    let groupPtr: UnsafePointer<CChar>? = group.isEmpty ? nil : cGroup
+                                    return vault_add_entry(
+                                        h, cTitle, cUser,
+                                        ptr, UInt32(password.count),
+                                        cUrl, cNotes, cOtp, groupPtr, expiry, &uuidPtr
+                                    )
+                                }
                             }
                         }
                     }
@@ -253,7 +263,8 @@ public final class VaultEngine: @unchecked Sendable {
         password: Data,
         url: String,
         notes: String,
-        otpURI: String = ""
+        otpURI: String = "",
+        expiryDate: Date? = nil
     ) throws {
         try Self.validateFFIString(uuid, field: "uuid")
         try Self.validateFFIString(title, field: "title")
@@ -263,6 +274,7 @@ public final class VaultEngine: @unchecked Sendable {
         lock.lock()
         defer { lock.unlock() }
         let h = try _requireHandle()
+        let expiry: Int64 = expiryDate.map { Int64($0.timeIntervalSince1970) } ?? 0
         let result = uuid.withCString { cUuid in
             title.withCString { cTitle in
                 username.withCString { cUser in
@@ -274,7 +286,7 @@ public final class VaultEngine: @unchecked Sendable {
                                     return vault_update_entry(
                                         h, cUuid, cTitle, cUser,
                                         ptr, UInt32(password.count),
-                                        cUrl, cNotes, cOtp
+                                        cUrl, cNotes, cOtp, expiry
                                     )
                                 }
                             }
@@ -286,7 +298,7 @@ public final class VaultEngine: @unchecked Sendable {
         try check(result)
     }
 
-    /// Delete an entry by UUID.
+    /// Delete an entry by UUID (soft-delete: moves to Recycle Bin).
     public func deleteEntry(uuid: String) throws {
         lock.lock()
         defer { lock.unlock() }
@@ -295,6 +307,40 @@ public final class VaultEngine: @unchecked Sendable {
             vault_delete_entry(h, cUuid)
         }
         try check(result)
+    }
+
+    /// Permanently remove all entries in the Recycle Bin. Returns the count removed.
+    @discardableResult
+    public func emptyRecycleBin() throws -> Int {
+        lock.lock()
+        defer { lock.unlock() }
+        let h = try _requireHandle()
+        var count: UInt32 = 0
+        let result = vault_empty_recyclebin(h, &count)
+        try check(result)
+        return Int(count)
+    }
+
+    /// List all group paths in the vault.
+    public func listGroups() throws -> [String] {
+        lock.lock()
+        defer { lock.unlock() }
+        let h = try _requireHandle()
+        var groupsPtr: UnsafeMutablePointer<UnsafeMutablePointer<CChar>?>?
+        var count: UInt32 = 0
+        let result = vault_list_groups(h, &groupsPtr, &count)
+        try check(result)
+        defer { group_list_free(groupsPtr, count) }
+
+        var groups: [String] = []
+        if let ptr = groupsPtr {
+            for i in 0..<Int(count) {
+                if let cStr = ptr.advanced(by: i).pointee {
+                    groups.append(String(cString: cStr))
+                }
+            }
+        }
+        return groups
     }
 
     // MARK: - Password Generation

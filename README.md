@@ -78,6 +78,19 @@ Or open `CitadelApp/Package.swift` in Xcode and run the `Citadel` scheme.
 
 This builds Rust + Swift in release mode, creates `Citadel.app`, and signs it with hardened runtime (ad-hoc). Hardened runtime blocks debugger attachment, dylib injection, and DYLD environment variables. Open with `open Citadel.app` or drag to `/Applications`.
 
+### Reproducible build with manifest
+
+```bash
+./scripts/reproducible-build.sh
+```
+
+This builds with `cargo build --release --locked` (exact dependency versions from Cargo.lock), creates `Citadel.app`, signs it with hardened runtime, and writes `build-manifest.json` containing toolchain versions, git commit, and SHA-256 checksums. To verify a build:
+
+```bash
+cat build-manifest.json                              # check recorded checksums
+shasum -a 256 Citadel.app/Contents/MacOS/Citadel     # compare binary hash
+```
+
 ### Run tests
 
 ```bash

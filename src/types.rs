@@ -21,6 +21,9 @@ pub struct CEntryListItem {
     pub title: *mut c_char,
     pub username: *mut c_char,
     pub url: *mut c_char,
+    pub group: *mut c_char,
+    /// Unix timestamp of expiry. 0 means no expiry set.
+    pub expiry_time: i64,
 }
 
 /// Owned list of entry summaries, allocated by Rust, freed by `entry_list_free`.
@@ -43,6 +46,8 @@ pub struct CEntryData {
     pub url: *mut c_char,
     pub notes: *mut c_char,
     pub otp_uri: *mut c_char,
+    /// Unix timestamp of expiry. 0 means no expiry set.
+    pub expiry_time: i64,
 }
 
 /// Bitmask flags for password character sets.

@@ -290,6 +290,8 @@ pub extern "C" fn vault_list_entries(
                 title: str_to_c(&s.title),
                 username: str_to_c(&s.username),
                 url: str_to_c(&s.url),
+                group: str_to_c(&s.group),
+                expiry_time: s.expiry_time,
             })
             .collect();
 
@@ -349,6 +351,7 @@ pub extern "C" fn vault_get_entry(
                     url: str_to_c(&detail.url),
                     notes: str_to_c(&detail.notes),
                     otp_uri: str_to_c(&detail.otp_uri),
+                    expiry_time: detail.expiry_time,
                 });
                 unsafe {
                     *entry_out = Box::into_raw(data);
@@ -371,6 +374,8 @@ pub extern "C" fn vault_add_entry(
     url: *const c_char,
     notes: *const c_char,
     otp_uri: *const c_char,
+    group: *const c_char,
+    expiry_time: i64,
     uuid_out: *mut *mut c_char,
 ) -> VaultResult {
     if handle.is_null() {
@@ -383,9 +388,10 @@ pub extern "C" fn vault_add_entry(
         let url_s = unsafe { cstr_to_str(url) };
         let notes_s = unsafe { cstr_to_str(notes) };
         let otp_s = unsafe { cstr_to_str(otp_uri) };
+        let group_s = unsafe { cstr_to_str(group) };
         let pw = unsafe { read_password(password_ptr, password_len) };
 
-        match state.add_entry_with_otp(title_s, username_s, &pw, url_s, notes_s, otp_s) {
+        match state.add_entry_full(title_s, username_s, &pw, url_s, notes_s, otp_s, group_s, expiry_time) {
             Ok(uuid) => {
                 if !uuid_out.is_null() {
                     unsafe {
@@ -411,6 +417,7 @@ pub extern "C" fn vault_update_entry(
     url: *const c_char,
     notes: *const c_char,
     otp_uri: *const c_char,
+    expiry_time: i64,
 ) -> VaultResult {
     if handle.is_null() || uuid_str.is_null() {
         return VaultResult::InternalError;
@@ -429,7 +436,7 @@ pub extern "C" fn vault_update_entry(
         let otp_s = unsafe { cstr_to_str(otp_uri) };
         let pw = unsafe { read_password(password_ptr, password_len) };
 
-        match state.update_entry_with_otp(uuid, title_s, username_s, &pw, url_s, notes_s, otp_s) {
+        match state.update_entry_full(uuid, title_s, username_s, &pw, url_s, notes_s, otp_s, expiry_time) {
             Ok(()) => VaultResult::Ok,
             Err(e) => e,
         }
@@ -454,6 +461,78 @@ pub extern "C" fn vault_delete_entry(
         };
         match state.delete_entry(uuid) {
             Ok(()) => VaultResult::Ok,
+            Err(e) => e,
+        }
+    }));
+    result.unwrap_or(VaultResult::InternalError)
+}
+
+/// List all group paths in the vault. Returns a null-terminated array of C strings.
+/// Free with `group_list_free`.
+#[no_mangle]
+pub extern "C" fn vault_list_groups(
+    handle: *mut c_void,
+    groups_out: *mut *mut *mut c_char,
+    count_out: *mut u32,
+) -> VaultResult {
+    if handle.is_null() || groups_out.is_null() || count_out.is_null() {
+        return VaultResult::InternalError;
+    }
+    let result = catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let state = unsafe { &*(handle as *const VaultState) };
+        let groups = state.list_groups();
+        let count = groups.len() as u32;
+        let ptrs: Vec<*mut c_char> = groups.iter().map(|g| str_to_c(g)).collect();
+        let ptr = if ptrs.is_empty() {
+            std::ptr::null_mut()
+        } else {
+            let mut boxed = ptrs.into_boxed_slice();
+            let p = boxed.as_mut_ptr();
+            std::mem::forget(boxed);
+            p
+        };
+        unsafe {
+            *groups_out = ptr;
+            *count_out = count;
+        }
+        VaultResult::Ok
+    }));
+    result.unwrap_or(VaultResult::InternalError)
+}
+
+/// Free a group list returned by `vault_list_groups`.
+#[no_mangle]
+pub extern "C" fn group_list_free(groups: *mut *mut c_char, count: u32) {
+    if groups.is_null() || count == 0 {
+        return;
+    }
+    let _ = catch_unwind(std::panic::AssertUnwindSafe(|| unsafe {
+        let items = Vec::from_raw_parts(groups, count as usize, count as usize);
+        for ptr in items {
+            free_c_string(ptr);
+        }
+    }));
+}
+
+/// Permanently remove all entries in the Recycle Bin. Returns the number of
+/// entries removed via `count_out` (set to 0 if no Recycle Bin exists).
+#[no_mangle]
+pub extern "C" fn vault_empty_recyclebin(
+    handle: *mut c_void,
+    count_out: *mut u32,
+) -> VaultResult {
+    if handle.is_null() {
+        return VaultResult::InternalError;
+    }
+    let result = catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let state = unsafe { &mut *(handle as *mut VaultState) };
+        match state.empty_recyclebin() {
+            Ok(count) => {
+                if !count_out.is_null() {
+                    unsafe { *count_out = count as u32; }
+                }
+                VaultResult::Ok
+            }
             Err(e) => e,
         }
     }));
@@ -529,6 +608,7 @@ pub extern "C" fn entry_list_free(list: *mut CEntryList) {
                 free_c_string(item.title);
                 free_c_string(item.username);
                 free_c_string(item.url);
+                free_c_string(item.group);
             }
         }
     }));

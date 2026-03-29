@@ -19,6 +19,7 @@ public final class AuditLogger {
         case exportCSV = "EXPORT_CSV"
         case importCSV = "IMPORT_CSV"
         case backup = "BACKUP"
+        case emptyRecycleBin = "EMPTY_RECYCLE_BIN"
     }
 
     private let logPath: String

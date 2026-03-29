@@ -166,6 +166,8 @@ fn full_crud_lifecycle() {
             url.as_ptr(),
             notes.as_ptr(),
             ptr::null(),
+            ptr::null(),
+            0,
             &mut uuid_ptr,
         ),
         VaultResult::Ok
@@ -217,6 +219,7 @@ fn full_crud_lifecycle() {
             url.as_ptr(),
             notes.as_ptr(),
             ptr::null(),
+            0,
         ),
         VaultResult::Ok
     );

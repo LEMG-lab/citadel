@@ -208,10 +208,20 @@ impl VaultState {
         Ok(())
     }
 
-    /// Collect all entries recursively as (uuid_string, title, username, url).
+    /// Collect all entries recursively. Excludes entries in the Recycle Bin group.
     pub fn list_entries(&self) -> Vec<EntrySummary> {
+        let rb_uuid = self.db.meta.recyclebin_uuid.unwrap_or(uuid::Uuid::nil());
+        let root_name = self.db.root.name.as_str();
         let mut out = Vec::new();
-        collect_entries(&self.db.root, &mut out);
+        collect_entries(&self.db.root, &mut out, rb_uuid, root_name);
+        out
+    }
+
+    /// List all group paths (excluding root and Recycle Bin).
+    pub fn list_groups(&self) -> Vec<String> {
+        let rb_uuid = self.db.meta.recyclebin_uuid.unwrap_or(uuid::Uuid::nil());
+        let mut out = Vec::new();
+        collect_groups(&self.db.root, "", &mut out, rb_uuid);
         out
     }
 
@@ -230,6 +240,7 @@ impl VaultState {
             url: entry.get_url().unwrap_or("").to_string(),
             notes: entry.get("Notes").unwrap_or("").to_string(),
             otp_uri: entry.get("otp").unwrap_or("").to_string(),
+            expiry_time: entry_expiry_timestamp(entry),
         })
     }
 
@@ -242,7 +253,7 @@ impl VaultState {
         url: &str,
         notes: &str,
     ) -> Result<uuid::Uuid, VaultResult> {
-        self.add_entry_with_otp(title, username, password, url, notes, "")
+        self.add_entry_full(title, username, password, url, notes, "", "", 0)
     }
 
     /// Add a new entry with optional OTP URI. Returns its UUID.
@@ -255,12 +266,30 @@ impl VaultState {
         notes: &str,
         otp_uri: &str,
     ) -> Result<uuid::Uuid, VaultResult> {
+        self.add_entry_full(title, username, password, url, notes, otp_uri, "", 0)
+    }
+
+    /// Add a new entry with all options. Returns its UUID.
+    ///
+    /// - `group_path`: empty = root group, otherwise slash-separated (e.g. "Work/Email")
+    /// - `expiry_time`: Unix timestamp. 0 = no expiry.
+    pub fn add_entry_full(
+        &mut self,
+        title: &str,
+        username: &str,
+        password: &[u8],
+        url: &str,
+        notes: &str,
+        otp_uri: &str,
+        group_path: &str,
+        expiry_time: i64,
+    ) -> Result<uuid::Uuid, VaultResult> {
         let password_str =
             std::str::from_utf8(password).map_err(|_| VaultResult::InternalError)?;
         let mut entry = Entry::new();
         let entry_uuid = entry.uuid;
         entry.icon_id = Some(0);
-        entry.times.expiry = Some(keepass::db::Times::epoch());
+        set_entry_expiry(&mut entry, expiry_time);
         entry.set_unprotected("Title", title);
         entry.set_unprotected("UserName", username);
         entry.set_protected("Password", password_str);
@@ -269,7 +298,13 @@ impl VaultState {
         if !otp_uri.is_empty() {
             entry.set_unprotected("otp", otp_uri);
         }
-        self.db.root.entries.push(entry);
+
+        if group_path.is_empty() {
+            self.db.root.entries.push(entry);
+        } else {
+            let target = get_or_create_group(&mut self.db.root, group_path);
+            target.entries.push(entry);
+        }
         Ok(entry_uuid)
     }
 
@@ -283,7 +318,7 @@ impl VaultState {
         url: &str,
         notes: &str,
     ) -> Result<(), VaultResult> {
-        self.update_entry_with_otp(uuid, title, username, password, url, notes, "")
+        self.update_entry_full(uuid, title, username, password, url, notes, "", 0)
     }
 
     /// Update an existing entry with optional OTP URI.
@@ -296,6 +331,21 @@ impl VaultState {
         url: &str,
         notes: &str,
         otp_uri: &str,
+    ) -> Result<(), VaultResult> {
+        self.update_entry_full(uuid, title, username, password, url, notes, otp_uri, 0)
+    }
+
+    /// Update an existing entry with all options.
+    pub fn update_entry_full(
+        &mut self,
+        uuid: uuid::Uuid,
+        title: &str,
+        username: &str,
+        password: &[u8],
+        url: &str,
+        notes: &str,
+        otp_uri: &str,
+        expiry_time: i64,
     ) -> Result<(), VaultResult> {
         let password_str =
             std::str::from_utf8(password).map_err(|_| VaultResult::InternalError)?;
@@ -311,21 +361,66 @@ impl VaultState {
         entry.set_unprotected("URL", url);
         entry.set_unprotected("Notes", notes);
         if otp_uri.is_empty() {
-            // Remove the otp field if cleared
             entry.fields.remove("otp");
         } else {
             entry.set_unprotected("otp", otp_uri);
         }
+        set_entry_expiry(entry, expiry_time);
         Ok(())
     }
 
-    /// Delete an entry by UUID. Searches all groups recursively.
+    /// Soft-delete an entry by UUID: move to Recycle Bin and record a DeletedObject.
     pub fn delete_entry(&mut self, uuid: uuid::Uuid) -> Result<(), VaultResult> {
-        if remove_entry_recursive(&mut self.db.root, uuid) {
-            Ok(())
-        } else {
-            Err(VaultResult::InternalError)
+        // Extract the entry from wherever it lives
+        let entry = extract_entry_recursive(&mut self.db.root, uuid)
+            .ok_or(VaultResult::InternalError)?;
+
+        // Get or create the Recycle Bin group
+        let rb_uuid = self.get_or_create_recyclebin();
+
+        // Find the Recycle Bin group and add the entry
+        let rb = self.db.root.group_by_uuid_mut(rb_uuid)
+            .ok_or(VaultResult::InternalError)?;
+        rb.entries.push(entry);
+
+        // Record deletion timestamp
+        self.db.deleted_objects.insert(uuid, Some(keepass::db::Times::now()));
+
+        Ok(())
+    }
+
+    /// Permanently remove all entries in the Recycle Bin group.
+    pub fn empty_recyclebin(&mut self) -> Result<usize, VaultResult> {
+        let rb_uuid = match self.db.meta.recyclebin_uuid {
+            Some(u) if u != uuid::Uuid::nil() => u,
+            _ => return Ok(0),
+        };
+        let rb = self.db.root.group_by_uuid_mut(rb_uuid)
+            .ok_or(VaultResult::InternalError)?;
+        let count = rb.entries.len();
+        rb.entries.clear();
+        Ok(count)
+    }
+
+    /// Get the Recycle Bin UUID, creating the group if needed.
+    fn get_or_create_recyclebin(&mut self) -> uuid::Uuid {
+        if let Some(rb_uuid) = self.db.meta.recyclebin_uuid {
+            if rb_uuid != uuid::Uuid::nil() {
+                if self.db.root.group_by_uuid(rb_uuid).is_some() {
+                    return rb_uuid;
+                }
+            }
         }
+        // Create Recycle Bin group
+        let mut rb = Group::new("Recycle Bin");
+        rb.icon_id = Some(43); // trash icon
+        rb.enable_searching = Some(false);
+        let rb_uuid = rb.uuid;
+        self.db.root.groups.push(rb);
+        self.db.meta.recyclebin_enabled = Some(true);
+        self.db.meta.recyclebin_uuid = Some(rb_uuid);
+        self.db.meta.recyclebin_changed = Some(keepass::db::Times::now());
+        rb_uuid
     }
 }
 
@@ -338,6 +433,9 @@ pub struct EntrySummary {
     pub title: String,
     pub username: String,
     pub url: String,
+    pub group: String,
+    /// Unix timestamp of expiry. 0 if expiry is not enabled.
+    pub expiry_time: i64,
 }
 
 pub struct EntryDetail {
@@ -348,19 +446,28 @@ pub struct EntryDetail {
     pub url: String,
     pub notes: String,
     pub otp_uri: String,
+    /// Unix timestamp of expiry. 0 if expiry is not enabled.
+    pub expiry_time: i64,
 }
 
-fn collect_entries(group: &Group, out: &mut Vec<EntrySummary>) {
+fn collect_entries(group: &Group, out: &mut Vec<EntrySummary>, skip_group: uuid::Uuid, path: &str) {
     for entry in &group.entries {
         out.push(EntrySummary {
             uuid: entry.uuid.to_string(),
             title: entry.get_title().unwrap_or("").to_string(),
             username: entry.get_username().unwrap_or("").to_string(),
             url: entry.get_url().unwrap_or("").to_string(),
+            group: path.to_string(),
+            expiry_time: entry_expiry_timestamp(entry),
         });
     }
     for child in &group.groups {
-        collect_entries(child, out);
+        // Skip the Recycle Bin group
+        if skip_group != uuid::Uuid::nil() && child.uuid == skip_group {
+            continue;
+        }
+        let child_path = format!("{}/{}", path, child.name);
+        collect_entries(child, out, skip_group, &child_path);
     }
 }
 
@@ -512,18 +619,79 @@ fn sanitize_autotype(autotype: &mut Option<keepass::db::AutoType>) {
     }
 }
 
-fn remove_entry_recursive(group: &mut Group, uuid: uuid::Uuid) -> bool {
-    let before = group.entries.len();
-    group.entries.retain(|e| e.uuid != uuid);
-    if group.entries.len() < before {
-        return true;
+/// Set the expiry on an entry. If `expiry_time` is 0, set expires=false and expiry=epoch.
+fn set_entry_expiry(entry: &mut Entry, expiry_time: i64) {
+    if expiry_time > 0 {
+        entry.times.expires = Some(true);
+        entry.times.expiry = Some(chrono::DateTime::from_timestamp(expiry_time, 0)
+            .map(|dt| dt.naive_utc())
+            .unwrap_or(keepass::db::Times::epoch()));
+    } else {
+        entry.times.expires = Some(false);
+        entry.times.expiry = Some(keepass::db::Times::epoch());
     }
-    for child in &mut group.groups {
-        if remove_entry_recursive(child, uuid) {
-            return true;
+}
+
+/// Extract the expiry timestamp from an entry. Returns 0 if expiry is not enabled.
+fn entry_expiry_timestamp(entry: &Entry) -> i64 {
+    if entry.times.expires == Some(true) {
+        if let Some(dt) = entry.times.expiry {
+            return dt.and_utc().timestamp();
         }
     }
-    false
+    0
+}
+
+/// Navigate to (or create) a group by slash-separated path relative to root.
+/// E.g., "Work/Email" finds or creates "Work" under root, then "Email" under "Work".
+fn get_or_create_group<'a>(root: &'a mut Group, path: &str) -> &'a mut Group {
+    let parts: Vec<&str> = path.split('/').filter(|s| !s.is_empty()).collect();
+    let mut current = root;
+    for part in parts {
+        // Find existing child or create one
+        let idx = current.groups.iter().position(|g| g.name == part);
+        if let Some(i) = idx {
+            current = &mut current.groups[i];
+        } else {
+            let mut new_group = Group::new(part);
+            new_group.icon_id = Some(48);
+            new_group.enable_searching = Some(true);
+            new_group.enable_autotype = Some(true);
+            current.groups.push(new_group);
+            let last = current.groups.len() - 1;
+            current = &mut current.groups[last];
+        }
+    }
+    current
+}
+
+/// Collect group paths recursively (excluding root name and Recycle Bin).
+fn collect_groups(group: &Group, path: &str, out: &mut Vec<String>, skip_group: uuid::Uuid) {
+    for child in &group.groups {
+        if skip_group != uuid::Uuid::nil() && child.uuid == skip_group {
+            continue;
+        }
+        let child_path = if path.is_empty() {
+            child.name.clone()
+        } else {
+            format!("{}/{}", path, child.name)
+        };
+        out.push(child_path.clone());
+        collect_groups(child, &child_path, out, skip_group);
+    }
+}
+
+/// Remove an entry by UUID from a group tree and return it.
+fn extract_entry_recursive(group: &mut Group, uuid: uuid::Uuid) -> Option<Entry> {
+    if let Some(pos) = group.entries.iter().position(|e| e.uuid == uuid) {
+        return Some(group.entries.remove(pos));
+    }
+    for child in &mut group.groups {
+        if let Some(entry) = extract_entry_recursive(child, uuid) {
+            return Some(entry);
+        }
+    }
+    None
 }
 
 fn map_open_error(e: keepass::db::DatabaseOpenError) -> VaultResult {
@@ -771,6 +939,122 @@ mod tests {
         assert_eq!(state2.list_entries().len(), 1);
     }
 
+    #[test]
+    fn soft_delete_moves_to_recyclebin() {
+        let pw = b"recycle-test";
+        let mut state = VaultState::create(pw, None).unwrap();
+        let uuid = state.add_entry("Trash Me", "user", b"pw", "", "").unwrap();
+        assert_eq!(state.list_entries().len(), 1);
+
+        state.delete_entry(uuid).unwrap();
+
+        // Entry should no longer appear in list_entries
+        assert!(state.list_entries().is_empty());
+
+        // Entry should be in the Recycle Bin group
+        let rb_uuid = state.db.meta.recyclebin_uuid.unwrap();
+        let rb = state.db.root.group_by_uuid(rb_uuid).unwrap();
+        assert_eq!(rb.entries.len(), 1);
+        assert_eq!(rb.entries[0].uuid, uuid);
+
+        // A DeletedObject should have been recorded
+        assert!(state.db.deleted_objects.contains_key(&uuid));
+    }
+
+    #[test]
+    fn empty_recyclebin_clears_entries() {
+        let pw = b"empty-rb-test";
+        let mut state = VaultState::create(pw, None).unwrap();
+        let u1 = state.add_entry("A", "u", b"p", "", "").unwrap();
+        let u2 = state.add_entry("B", "u", b"p", "", "").unwrap();
+        state.delete_entry(u1).unwrap();
+        state.delete_entry(u2).unwrap();
+        assert!(state.list_entries().is_empty());
+
+        let count = state.empty_recyclebin().unwrap();
+        assert_eq!(count, 2);
+
+        // Recycle Bin should be empty now
+        let rb_uuid = state.db.meta.recyclebin_uuid.unwrap();
+        let rb = state.db.root.group_by_uuid(rb_uuid).unwrap();
+        assert!(rb.entries.is_empty());
+    }
+
+    #[test]
+    fn recyclebin_roundtrip() {
+        let pw = b"rb-roundtrip";
+        let mut state = VaultState::create(pw, None).unwrap();
+        let uuid = state.add_entry("Deleted", "u", b"p", "", "").unwrap();
+        state.delete_entry(uuid).unwrap();
+
+        let tmp = NamedTempFile::new().unwrap();
+        let path = tmp.path().to_str().unwrap();
+        state.save_to(path).unwrap();
+
+        let state2 = VaultState::open(path, pw, None).unwrap();
+        // Deleted entry should not appear in list
+        assert!(state2.list_entries().is_empty());
+        // But should still be findable in the Recycle Bin
+        let rb_uuid = state2.db.meta.recyclebin_uuid.unwrap();
+        let rb = state2.db.root.group_by_uuid(rb_uuid).unwrap();
+        assert_eq!(rb.entries.len(), 1);
+    }
+
+    #[test]
+    fn add_entry_to_group() {
+        let pw = b"group-test";
+        let mut state = VaultState::create(pw, None).unwrap();
+        let uuid = state.add_entry_full("Work Email", "bob", b"pw", "", "", "", "Work/Email", 0).unwrap();
+
+        let entries = state.list_entries();
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].group, "Root/Work/Email");
+
+        // Entry should still be accessible via get_entry / update / delete
+        let detail = state.get_entry(uuid).unwrap();
+        assert_eq!(detail.title, "Work Email");
+
+        state.update_entry(uuid, "Work Email Updated", "bob", b"pw2", "", "").unwrap();
+        let detail2 = state.get_entry(uuid).unwrap();
+        assert_eq!(detail2.title, "Work Email Updated");
+
+        state.delete_entry(uuid).unwrap();
+        assert!(state.list_entries().is_empty());
+    }
+
+    #[test]
+    fn list_groups() {
+        let pw = b"groups-test";
+        let mut state = VaultState::create(pw, None).unwrap();
+        state.add_entry_full("A", "u", b"p", "", "", "", "Work", 0).unwrap();
+        state.add_entry_full("B", "u", b"p", "", "", "", "Work/Email", 0).unwrap();
+        state.add_entry_full("C", "u", b"p", "", "", "", "Personal", 0).unwrap();
+
+        let groups = state.list_groups();
+        assert!(groups.contains(&"Work".to_string()));
+        assert!(groups.contains(&"Work/Email".to_string()));
+        assert!(groups.contains(&"Personal".to_string()));
+    }
+
+    #[test]
+    fn groups_roundtrip() {
+        let pw = b"groups-rt";
+        let mut state = VaultState::create(pw, None).unwrap();
+        state.add_entry_full("A", "u", b"p", "", "", "", "Work", 0).unwrap();
+        state.add_entry_full("B", "u", b"p", "", "", "", "Personal", 0).unwrap();
+
+        let tmp = NamedTempFile::new().unwrap();
+        let path = tmp.path().to_str().unwrap();
+        state.save_to(path).unwrap();
+
+        let state2 = VaultState::open(path, pw, None).unwrap();
+        let entries = state2.list_entries();
+        assert_eq!(entries.len(), 2);
+        let groups: Vec<&str> = entries.iter().map(|e| e.group.as_str()).collect();
+        assert!(groups.contains(&"Root/Work"));
+        assert!(groups.contains(&"Root/Personal"));
+    }
+
     /// Verify that vault_close (Drop via FFI) actually runs and the handle
     /// is no longer usable. We use the FFI path because that's the real
     /// lifecycle: Box::into_raw → use → Box::from_raw (drop).
@@ -803,6 +1087,8 @@ mod tests {
                 url.as_ptr(),
                 notes.as_ptr(),
                 std::ptr::null(),
+                std::ptr::null(),
+                0,
                 &mut uuid_ptr,
             ),
             VaultResult::Ok

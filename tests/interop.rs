@@ -147,6 +147,8 @@ fn ffi_add_entry(
         c_url.as_ptr(),
         c_notes.as_ptr(),
         ptr::null(),
+        ptr::null(),
+        0,
         &mut uuid_ptr,
     );
     assert_eq!(result, VaultResult::Ok, "vault_add_entry failed for {}", title);

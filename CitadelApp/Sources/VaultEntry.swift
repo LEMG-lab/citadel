@@ -6,6 +6,9 @@ public struct VaultEntrySummary: Identifiable, Sendable {
     public let title: String
     public let username: String
     public let url: String
+    public let group: String
+    /// Expiry date, or nil if no expiry is set.
+    public let expiryDate: Date?
 }
 
 /// Full entry data including password as raw bytes.
@@ -18,4 +21,6 @@ public struct VaultEntryDetail: Sendable {
     public let url: String
     public let notes: String
     public let otpURI: String
+    /// Expiry date, or nil if no expiry is set.
+    public let expiryDate: Date?
 }

@@ -14,6 +14,8 @@ struct SettingsView: View {
     @State private var selectedKdfPreset: KdfPreset = .saved
     @State private var showingKdfConfirmation = false
     @State private var kdfMessage: String?
+    @State private var showingEmptyRecycleBin = false
+    @State private var recycleBinMessage: String?
 
     var body: some View {
         @Bindable var appState = appState
@@ -95,6 +97,17 @@ struct SettingsView: View {
                     }
                 }
 
+                Section("Recycle Bin") {
+                    Button("Empty Recycle Bin", role: .destructive) {
+                        showingEmptyRecycleBin = true
+                    }
+                    if let msg = recycleBinMessage {
+                        Text(msg)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+
                 Section("Recovery") {
                     Button("Print Recovery Sheet") {
                         showingRecoverySheet = true
@@ -141,6 +154,16 @@ struct SettingsView: View {
         } message: {
             Text("This will re-encrypt your vault with \(selectedKdfPreset.label) KDF parameters. This may take a moment.")
         }
+        .confirmationDialog(
+            "Empty Recycle Bin",
+            isPresented: $showingEmptyRecycleBin,
+            titleVisibility: .visible
+        ) {
+            Button("Delete Permanently", role: .destructive) { emptyRecycleBin() }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("All entries in the Recycle Bin will be permanently deleted. This cannot be undone.")
+        }
     }
 
     private func applyKdfChange() {
@@ -150,6 +173,15 @@ struct SettingsView: View {
         } catch {
             kdfMessage = "KDF change failed."
             selectedKdfPreset = .saved
+        }
+    }
+
+    private func emptyRecycleBin() {
+        do {
+            let count = try appState.emptyRecycleBin()
+            recycleBinMessage = count > 0 ? "\(count) entry(s) permanently deleted." : "Recycle Bin was already empty."
+        } catch {
+            recycleBinMessage = "Failed to empty Recycle Bin."
         }
     }
 
