@@ -13,6 +13,7 @@ use crate::types::VaultResult;
 pub struct VaultState {
     pub db: Database,
     password: Zeroizing<Vec<u8>>,
+    keyfile_path: Option<String>,
 }
 
 impl Drop for VaultState {
@@ -40,28 +41,38 @@ impl VaultState {
         }
     }
 
-    /// Open an existing KDBX file.
-    pub fn open(path: &str, password: &[u8]) -> Result<Self, VaultResult> {
+    /// Build a DatabaseKey from password + optional keyfile.
+    fn build_key(password: &[u8], keyfile_path: Option<&str>) -> Result<DatabaseKey, VaultResult> {
         let password_str = std::str::from_utf8(password).map_err(|_| VaultResult::InternalError)?;
+        let mut key = DatabaseKey::new().with_password(password_str);
+        if let Some(kf_path) = keyfile_path {
+            let mut kf = std::fs::File::open(kf_path).map_err(|_| VaultResult::FileNotFound)?;
+            key = key.with_keyfile(&mut kf).map_err(|_| VaultResult::InternalError)?;
+        }
+        Ok(key)
+    }
+
+    /// Open an existing KDBX file.
+    pub fn open(path: &str, password: &[u8], keyfile_path: Option<&str>) -> Result<Self, VaultResult> {
         let mut file =
             std::fs::File::open(path).map_err(|e| match e.kind() {
                 std::io::ErrorKind::NotFound => VaultResult::FileNotFound,
                 _ => VaultResult::InternalError,
             })?;
-        let key = DatabaseKey::new().with_password(password_str);
+        let key = Self::build_key(password, keyfile_path)?;
         let db = Database::open(&mut file, key).map_err(map_open_error)?;
         let pw = Zeroizing::new(password.to_vec());
         Self::lock_password(&pw);
-        Ok(VaultState { db, password: pw })
+        Ok(VaultState { db, password: pw, keyfile_path: keyfile_path.map(String::from) })
     }
 
     /// Create a new empty KDBX 4 vault with Argon2id / ChaCha20.
-    pub fn create(password: &[u8]) -> Result<Self, VaultResult> {
+    pub fn create(password: &[u8], keyfile_path: Option<&str>) -> Result<Self, VaultResult> {
         if password.is_empty() {
             return Err(VaultResult::EmptyPassword);
         }
-        let _password_str =
-            std::str::from_utf8(password).map_err(|_| VaultResult::InternalError)?;
+        // Validate password is UTF-8 and keyfile is readable (if provided)
+        let _ = Self::build_key(password, keyfile_path)?;
         let config = DatabaseConfig {
             version: DatabaseVersion::KDB4(1),
             outer_cipher_config: OuterCipherConfig::ChaCha20,
@@ -116,7 +127,7 @@ impl VaultState {
 
         let pw = Zeroizing::new(password.to_vec());
         Self::lock_password(&pw);
-        Ok(VaultState { db, password: pw })
+        Ok(VaultState { db, password: pw, keyfile_path: keyfile_path.map(String::from) })
     }
 
     /// Save the database to the given path using the stored password.
@@ -134,9 +145,7 @@ impl VaultState {
         // tags, which KeePassXC rejects.
         sanitize_for_keepassxc(&mut self.db);
 
-        let password_str = std::str::from_utf8(&self.password)
-            .map_err(|_| VaultResult::InternalError)?;
-        let key = DatabaseKey::new().with_password(password_str);
+        let key = Self::build_key(&self.password, self.keyfile_path.as_deref())?;
         let mut file = std::fs::File::create(path).map_err(|_| VaultResult::WriteFailed)?;
         self.db
             .save(&mut file, key)
@@ -144,24 +153,25 @@ impl VaultState {
         Ok(())
     }
 
-    /// Validate that a file can be opened with the given password.
-    pub fn validate(path: &str, password: &[u8]) -> Result<(), VaultResult> {
+    /// Validate that a file can be opened with the given password (+ optional keyfile).
+    pub fn validate(path: &str, password: &[u8], keyfile_path: Option<&str>) -> Result<(), VaultResult> {
         // Just try to open — if it succeeds, the file and password are valid.
-        let _state = Self::open(path, password)?;
+        let _state = Self::open(path, password, keyfile_path)?;
         Ok(())
     }
 
-    /// Change the stored password. Takes effect on next save.
-    pub fn change_password(&mut self, new_password: &[u8]) -> Result<(), VaultResult> {
+    /// Change the stored password (and optionally keyfile). Takes effect on next save.
+    pub fn change_password(&mut self, new_password: &[u8], new_keyfile: Option<&str>) -> Result<(), VaultResult> {
         if new_password.is_empty() {
             return Err(VaultResult::EmptyPassword);
         }
-        let _check =
-            std::str::from_utf8(new_password).map_err(|_| VaultResult::InternalError)?;
+        // Validate password is UTF-8 and keyfile is readable
+        let _ = Self::build_key(new_password, new_keyfile)?;
         Self::unlock_password(&self.password);
         self.password.zeroize();
         self.password = Zeroizing::new(new_password.to_vec());
         Self::lock_password(&self.password);
+        self.keyfile_path = new_keyfile.map(String::from);
         Ok(())
     }
 
@@ -432,12 +442,12 @@ mod tests {
     #[test]
     fn create_and_reopen() {
         let pw = b"test-password-123";
-        let mut state = VaultState::create(pw).expect("create failed");
+        let mut state = VaultState::create(pw, None).expect("create failed");
         let tmp = NamedTempFile::new().unwrap();
         let path = tmp.path().to_str().unwrap();
         state.save_to(path).expect("save failed");
 
-        let state2 = VaultState::open(path, pw).expect("reopen failed");
+        let state2 = VaultState::open(path, pw, None).expect("reopen failed");
         assert_eq!(
             state2.db.meta.database_name.as_deref(),
             Some("Citadel Vault")
@@ -447,25 +457,25 @@ mod tests {
     #[test]
     fn wrong_password_returns_error() {
         let pw = b"correct";
-        let mut state = VaultState::create(pw).expect("create failed");
+        let mut state = VaultState::create(pw, None).expect("create failed");
         let tmp = NamedTempFile::new().unwrap();
         let path = tmp.path().to_str().unwrap();
         state.save_to(path).expect("save failed");
 
-        let err = VaultState::open(path, b"wrong").unwrap_err();
+        let err = VaultState::open(path, b"wrong", None).unwrap_err();
         assert_eq!(err, VaultResult::WrongPassword);
     }
 
     #[test]
     fn file_not_found() {
-        let err = VaultState::open("/tmp/nonexistent_citadel_test.kdbx", b"pw").unwrap_err();
+        let err = VaultState::open("/tmp/nonexistent_citadel_test.kdbx", b"pw", None).unwrap_err();
         assert_eq!(err, VaultResult::FileNotFound);
     }
 
     #[test]
     fn add_list_get_update_delete_entry() {
         let pw = b"test";
-        let mut state = VaultState::create(pw).unwrap();
+        let mut state = VaultState::create(pw, None).unwrap();
 
         // Add
         let uuid = state
@@ -499,7 +509,7 @@ mod tests {
     #[test]
     fn change_password_and_reopen() {
         let pw = b"old-pw";
-        let mut state = VaultState::create(pw).unwrap();
+        let mut state = VaultState::create(pw, None).unwrap();
         state.add_entry("Test", "user", b"pw", "", "").unwrap();
 
         let tmp = NamedTempFile::new().unwrap();
@@ -509,52 +519,52 @@ mod tests {
         state.save_to(path).unwrap();
 
         // Change password
-        state.change_password(b"new-pw").unwrap();
+        state.change_password(b"new-pw", None).unwrap();
         state.save_to(path).unwrap();
 
         // Old password should fail
         assert_eq!(
-            VaultState::open(path, b"old-pw").unwrap_err(),
+            VaultState::open(path, b"old-pw", None).unwrap_err(),
             VaultResult::WrongPassword
         );
 
         // New password should work
-        let state2 = VaultState::open(path, b"new-pw").unwrap();
+        let state2 = VaultState::open(path, b"new-pw", None).unwrap();
         assert_eq!(state2.list_entries().len(), 1);
     }
 
     #[test]
     fn validate_good_and_bad() {
         let pw = b"validate-test";
-        let mut state = VaultState::create(pw).unwrap();
+        let mut state = VaultState::create(pw, None).unwrap();
         let tmp = NamedTempFile::new().unwrap();
         let path = tmp.path().to_str().unwrap();
         state.save_to(path).unwrap();
 
-        assert_eq!(VaultState::validate(path, pw), Ok(()));
+        assert_eq!(VaultState::validate(path, pw, None), Ok(()));
         assert_eq!(
-            VaultState::validate(path, b"wrong"),
+            VaultState::validate(path, b"wrong", None),
             Err(VaultResult::WrongPassword)
         );
     }
 
     #[test]
     fn empty_password_rejected_on_create() {
-        let err = VaultState::create(b"").unwrap_err();
+        let err = VaultState::create(b"", None).unwrap_err();
         assert_eq!(err, VaultResult::EmptyPassword);
     }
 
     #[test]
     fn empty_password_rejected_on_change() {
-        let mut state = VaultState::create(b"initial").unwrap();
-        let err = state.change_password(b"").unwrap_err();
+        let mut state = VaultState::create(b"initial", None).unwrap();
+        let err = state.change_password(b"", None).unwrap_err();
         assert_eq!(err, VaultResult::EmptyPassword);
     }
 
     #[test]
     fn roundtrip_preserves_entries() {
         let pw = b"roundtrip";
-        let mut state = VaultState::create(pw).unwrap();
+        let mut state = VaultState::create(pw, None).unwrap();
         state.add_entry("A", "u1", b"p1", "http://a", "n1").unwrap();
         state.add_entry("B", "u2", b"p2", "http://b", "n2").unwrap();
 
@@ -562,7 +572,7 @@ mod tests {
         let path = tmp.path().to_str().unwrap();
         state.save_to(path).unwrap();
 
-        let state2 = VaultState::open(path, pw).unwrap();
+        let state2 = VaultState::open(path, pw, None).unwrap();
         let entries = state2.list_entries();
         assert_eq!(entries.len(), 2);
         let titles: Vec<&str> = entries.iter().map(|e| e.title.as_str()).collect();
@@ -581,7 +591,7 @@ mod tests {
 
         let pw = b"drop-test";
         let mut handle: *mut std::ffi::c_void = std::ptr::null_mut();
-        let result = vault_create(pw.as_ptr(), pw.len() as u32, &mut handle);
+        let result = vault_create(pw.as_ptr(), pw.len() as u32, std::ptr::null(), &mut handle);
         assert_eq!(result, VaultResult::Ok);
         assert!(!handle.is_null());
 

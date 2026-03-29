@@ -29,15 +29,21 @@ public final class VaultEngine: @unchecked Sendable {
     // MARK: - Lifecycle
 
     /// Open an existing KDBX vault file.
-    public func open(path: String, password: Data) throws {
+    public func open(path: String, password: Data, keyfilePath: String? = nil) throws {
         lock.lock()
         defer { lock.unlock() }
         _close()
         var outHandle: UnsafeMutableRawPointer?
         let result = path.withCString { cPath in
-            password.withUnsafeBytes { buf -> VaultResult in
+            password.withUnsafeBytes { (buf: UnsafeRawBufferPointer) -> VaultResult in
                 let ptr = buf.baseAddress?.assumingMemoryBound(to: UInt8.self)
-                return vault_open(cPath, ptr, UInt32(password.count), &outHandle)
+                if let kf = keyfilePath {
+                    return kf.withCString { cKf in
+                        vault_open(cPath, ptr, UInt32(password.count), cKf, &outHandle)
+                    }
+                } else {
+                    return vault_open(cPath, ptr, UInt32(password.count), nil, &outHandle)
+                }
             }
         }
         try check(result)
@@ -45,14 +51,20 @@ public final class VaultEngine: @unchecked Sendable {
     }
 
     /// Create a new KDBX vault in memory. Use `saveTo` or `VaultPersistence` to persist.
-    public func create(password: Data) throws {
+    public func create(password: Data, keyfilePath: String? = nil) throws {
         lock.lock()
         defer { lock.unlock() }
         _close()
         var outHandle: UnsafeMutableRawPointer?
-        let result = password.withUnsafeBytes { buf -> VaultResult in
+        let result = password.withUnsafeBytes { (buf: UnsafeRawBufferPointer) -> VaultResult in
             let ptr = buf.baseAddress?.assumingMemoryBound(to: UInt8.self)
-            return vault_create(ptr, UInt32(password.count), &outHandle)
+            if let kf = keyfilePath {
+                return kf.withCString { cKf in
+                    vault_create(ptr, UInt32(password.count), cKf, &outHandle)
+                }
+            } else {
+                return vault_create(ptr, UInt32(password.count), nil, &outHandle)
+            }
         }
         try check(result)
         handle = outHandle
@@ -74,11 +86,17 @@ public final class VaultEngine: @unchecked Sendable {
     }
 
     /// Validate that a file can be opened with the given password.
-    public static func validate(path: String, password: Data) throws {
+    public static func validate(path: String, password: Data, keyfilePath: String? = nil) throws {
         let result = path.withCString { cPath in
-            password.withUnsafeBytes { buf -> VaultResult in
+            password.withUnsafeBytes { (buf: UnsafeRawBufferPointer) -> VaultResult in
                 let ptr = buf.baseAddress?.assumingMemoryBound(to: UInt8.self)
-                return vault_validate(cPath, ptr, UInt32(password.count))
+                if let kf = keyfilePath {
+                    return kf.withCString { cKf in
+                        vault_validate(cPath, ptr, UInt32(password.count), cKf)
+                    }
+                } else {
+                    return vault_validate(cPath, ptr, UInt32(password.count), nil)
+                }
             }
         }
         try check(result)
@@ -91,14 +109,20 @@ public final class VaultEngine: @unchecked Sendable {
         _close()
     }
 
-    /// Change the vault password. Takes effect on next save.
-    public func changePassword(_ newPassword: Data) throws {
+    /// Change the vault password (and optionally keyfile). Takes effect on next save.
+    public func changePassword(_ newPassword: Data, keyfilePath: String? = nil) throws {
         lock.lock()
         defer { lock.unlock() }
         let h = try _requireHandle()
-        let result = newPassword.withUnsafeBytes { buf -> VaultResult in
+        let result = newPassword.withUnsafeBytes { (buf: UnsafeRawBufferPointer) -> VaultResult in
             let ptr = buf.baseAddress?.assumingMemoryBound(to: UInt8.self)
-            return vault_change_password(h, ptr, UInt32(newPassword.count))
+            if let kf = keyfilePath {
+                return kf.withCString { cKf in
+                    vault_change_password(h, ptr, UInt32(newPassword.count), cKf)
+                }
+            } else {
+                return vault_change_password(h, ptr, UInt32(newPassword.count), nil)
+            }
         }
         try check(result)
     }

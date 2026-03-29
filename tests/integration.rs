@@ -14,6 +14,7 @@ fn open_fixture() -> *mut std::ffi::c_void {
         c_path.as_ptr(),
         password.as_ptr(),
         password.len() as u32,
+        ptr::null(),
         &mut handle,
     );
     assert_eq!(result, VaultResult::Ok, "failed to open test fixture");
@@ -103,6 +104,7 @@ fn wrong_password_on_fixture() {
         c_path.as_ptr(),
         wrong_pw.as_ptr(),
         wrong_pw.len() as u32,
+        ptr::null(),
         &mut handle,
     );
     assert_eq!(result, VaultResult::WrongPassword);
@@ -115,13 +117,13 @@ fn validate_fixture() {
 
     let good_pw = b"Test123";
     assert_eq!(
-        vault_validate(c_path.as_ptr(), good_pw.as_ptr(), good_pw.len() as u32),
+        vault_validate(c_path.as_ptr(), good_pw.as_ptr(), good_pw.len() as u32, ptr::null()),
         VaultResult::Ok
     );
 
     let bad_pw = b"nope";
     assert_eq!(
-        vault_validate(c_path.as_ptr(), bad_pw.as_ptr(), bad_pw.len() as u32),
+        vault_validate(c_path.as_ptr(), bad_pw.as_ptr(), bad_pw.len() as u32, ptr::null()),
         VaultResult::WrongPassword
     );
 }
@@ -139,6 +141,7 @@ fn full_crud_lifecycle() {
         vault_create(
             password.as_ptr(),
             password.len() as u32,
+            ptr::null(),
             &mut handle,
         ),
         VaultResult::Ok
@@ -248,7 +251,7 @@ fn full_crud_lifecycle() {
     // Change password and re-save
     let new_vault_pw = b"new-vault-password";
     assert_eq!(
-        vault_change_password(handle, new_vault_pw.as_ptr(), new_vault_pw.len() as u32),
+        vault_change_password(handle, new_vault_pw.as_ptr(), new_vault_pw.len() as u32, ptr::null()),
         VaultResult::Ok
     );
     assert_eq!(vault_save_to(handle, c_path.as_ptr()), VaultResult::Ok);
@@ -262,6 +265,7 @@ fn full_crud_lifecycle() {
             c_path.as_ptr(),
             new_vault_pw.as_ptr(),
             new_vault_pw.len() as u32,
+            ptr::null(),
             &mut handle2,
         ),
         VaultResult::Ok
@@ -275,6 +279,7 @@ fn full_crud_lifecycle() {
             c_path.as_ptr(),
             password.as_ptr(),
             password.len() as u32,
+            ptr::null(),
             &mut handle3,
         ),
         VaultResult::WrongPassword

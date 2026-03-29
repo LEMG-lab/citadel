@@ -1,4 +1,5 @@
 import SwiftUI
+import UniformTypeIdentifiers
 import CitadelCore
 
 /// Main vault UI with sidebar entry list and detail pane.
@@ -9,6 +10,8 @@ struct MainView: View {
     @State private var showingSettings = false
     @State private var backupResultMessage: String?
     @State private var showingBackupResult = false
+    @State private var importResultMessage: String?
+    @State private var showingImportResult = false
 
     var body: some View {
         @Bindable var appState = appState
@@ -31,8 +34,13 @@ struct MainView: View {
                 Button("Add Entry", systemImage: "plus") {
                     showingAddEntry = true
                 }
-                Button("Backup", systemImage: "arrow.down.doc") {
-                    performBackup()
+                Menu {
+                    Button("Export CSV…") { exportCSV() }
+                    Button("Import CSV…") { importCSV() }
+                    Divider()
+                    Button("Backup Vault…") { performBackup() }
+                } label: {
+                    Label("More", systemImage: "ellipsis.circle")
                 }
                 Button("Settings", systemImage: "gearshape") {
                     showingSettings = true
@@ -55,6 +63,74 @@ struct MainView: View {
         } message: {
             Text(backupResultMessage ?? "")
         }
+        .alert("CSV Import", isPresented: $showingImportResult) {
+            Button("OK") {}
+        } message: {
+            Text(importResultMessage ?? "")
+        }
+    }
+
+    private func exportCSV() {
+        do {
+            let entries: [(title: String, username: String, password: String, url: String, notes: String)] =
+                try appState.entries.map { summary in
+                    let detail = try appState.engine.getEntry(uuid: summary.id)
+                    return (
+                        title: detail.title,
+                        username: detail.username,
+                        password: String(decoding: detail.password, as: UTF8.self),
+                        url: detail.url,
+                        notes: detail.notes
+                    )
+                }
+
+            let csvData = CSVManager.export(entries: entries)
+
+            let panel = NSSavePanel()
+            panel.title = "Export Entries as CSV"
+            panel.nameFieldStringValue = "citadel-export.csv"
+            panel.allowedContentTypes = [.commaSeparatedText]
+            guard panel.runModal() == .OK, let url = panel.url else { return }
+
+            try csvData.write(to: url)
+            appState.auditLogger.log(.exportCSV, detail: "\(entries.count) entries")
+        } catch {
+            importResultMessage = "Export failed."
+            showingImportResult = true
+        }
+    }
+
+    private func importCSV() {
+        let panel = NSOpenPanel()
+        panel.title = "Import CSV"
+        panel.allowedContentTypes = [.commaSeparatedText]
+        panel.allowsMultipleSelection = false
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+
+        do {
+            let data = try Data(contentsOf: url)
+            let entries = try CSVManager.parse(data: data)
+            var count = 0
+            for entry in entries {
+                _ = try appState.engine.addEntry(
+                    title: entry.title,
+                    username: entry.username,
+                    password: Data(entry.password.utf8),
+                    url: entry.url,
+                    notes: entry.notes
+                )
+                count += 1
+            }
+            if count > 0 {
+                try appState.save()
+                try appState.refreshEntries()
+            }
+            importResultMessage = "Imported \(count) entries."
+            appState.auditLogger.log(.importCSV, detail: "\(count) entries")
+        } catch {
+            importResultMessage = "Import failed."
+        }
+        showingImportResult = true
     }
 
     private func performBackup() {

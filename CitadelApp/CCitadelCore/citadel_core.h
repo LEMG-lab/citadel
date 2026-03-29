@@ -86,23 +86,27 @@ typedef struct CharsetFlags {
 enum VaultResult vault_open(const char *path,
                             const uint8_t *password_ptr,
                             uint32_t password_len,
+                            const char *keyfile_path,
                             void **handle_out);
 
 enum VaultResult vault_create(const uint8_t *password_ptr,
                               uint32_t password_len,
+                              const char *keyfile_path,
                               void **handle_out);
 
 enum VaultResult vault_save_to(void *handle, const char *path);
 
 enum VaultResult vault_validate(const char *path,
                                 const uint8_t *password_ptr,
-                                uint32_t password_len);
+                                uint32_t password_len,
+                                const char *keyfile_path);
 
 void vault_close(void *handle);
 
 enum VaultResult vault_change_password(void *handle,
                                        const uint8_t *new_password_ptr,
-                                       uint32_t new_password_len);
+                                       uint32_t new_password_len,
+                                       const char *new_keyfile_path);
 
 enum VaultResult vault_list_entries(void *handle, struct CEntryList **list_out);
 

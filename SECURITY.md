@@ -12,12 +12,17 @@
 - Sensitive memory paging to swap (mlock on master password buffer in Rust core)
 - Core dumps containing secrets (RLIMIT_CORE = 0 set on first FFI call)
 - Debugger attachment and dylib injection (hardened runtime when built as .app bundle)
+- Filesystem isolation (App Sandbox — vault accessible only within app container; no network entitlements)
+- Two-factor vault protection (optional keyfile in addition to master password)
+- Vault file permissions (chmod 600 on vault, chmod 700 on vault directory after every save)
+- Symlink-safe saves (vault path resolved before writing .tmp to prevent cross-device rename failures)
+- Audit trail (file-based audit log with 30-day rotation; logs unlock, lock, entry changes, password changes)
 
 ## What Citadel does NOT protect against
 - A fully compromised endpoint (keylogger, screen recorder, memory dump while unlocked)
 - Clipboard managers that ignore the ConcealedType convention
 - Physical access to an unlocked Mac with the vault open
-- Weak master passwords (the vault's security is bounded by password entropy)
+- Weak master passwords (the vault's security is bounded by password entropy; a strength meter is shown during entry editing and password generation)
 - macOS swap/hibernation writing sensitive memory to disk (mitigated by mlock on password buffer + Rust zeroize; Database struct internals may still be paged)
 - Screen recording by apps with Accessibility permissions
 - Time Machine backing up .prev snapshot files and vault-backup-*.kdbx files (see below)
@@ -43,7 +48,7 @@ The `sanitize_autotype` function drops AutoType configuration blocks that contai
 
 ### Other limitations
 - Master password must be valid UTF-8 (keepass-rs limitation)
-- App runs without App Sandbox (hardened runtime blocks debuggers and dylib injection, but full sandbox requires container directory migration — planned follow-up)
+- App Sandbox uses the container directory (`~/Library/Containers/com.lemg-lab.citadel/Data/.citadel/`). Users migrating from an unsandboxed install must import their vault via the lock screen. The sandbox grants `files.user-selected.read-write` for backup export and vault import, `files.bookmarks.app-scope` for security-scoped bookmarks, and `print` for recovery sheets. No network entitlements are granted.
 - The keepass-rs crate (v0.10) is pre-1.0 with KDBX4 write support marked as feature-gated
 - Cloud sync detection checks common paths but may not detect all sync services
 
@@ -55,4 +60,4 @@ The `sanitize_autotype` function drops AutoType configuration blocks that contai
 - RNG: SecRandomCopyBytes (Apple hardware entropy) for vault operations, rand::rng() (ChaCha20-based CSPRNG) for password generation
 
 ## Escape hatch
-If Citadel stops working, open vault.kdbx with KeePassXC (free, open source, cross-platform) using your master password. No additional software or keys are needed.
+If Citadel stops working, open vault.kdbx with KeePassXC (free, open source, cross-platform) using your master password (and keyfile, if configured). No additional software is needed.

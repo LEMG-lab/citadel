@@ -1,4 +1,5 @@
 import SwiftUI
+import UniformTypeIdentifiers
 
 /// Lock screen — master password entry and vault creation.
 struct LockScreenView: View {
@@ -9,6 +10,7 @@ struct LockScreenView: View {
     @State private var isCreating = false
     @State private var showCreateConfirmation = false
     @State private var errorMessage: String?
+    @State private var keyfilePath: String?
     @FocusState private var focusedField: Field?
 
     private enum Field: Hashable {
@@ -55,6 +57,8 @@ struct LockScreenView: View {
             .onSubmit { unlock() }
             .onAppear { focusedField = .password }
 
+        keyfileRow
+
         if let msg = errorMessage {
             Text(msg)
                 .foregroundStyle(.red)
@@ -75,6 +79,9 @@ struct LockScreenView: View {
                 errorMessage = nil
                 focusedField = .password
             }
+            Button("Import Existing Vault") {
+                importVault()
+            }
         }
     }
 
@@ -92,6 +99,8 @@ struct LockScreenView: View {
             .focused($focusedField, equals: .confirm)
             .onSubmit { requestCreate() }
 
+        keyfileRow
+
         if let msg = errorMessage {
             Text(msg)
                 .foregroundStyle(.red)
@@ -103,6 +112,7 @@ struct LockScreenView: View {
                 isCreating = false
                 password = ""
                 confirmPassword = ""
+                keyfilePath = nil
                 errorMessage = nil
             }
             Button("Create Vault") { requestCreate() }
@@ -112,12 +122,48 @@ struct LockScreenView: View {
         }
     }
 
+    // MARK: - Keyfile
+
+    @ViewBuilder
+    private var keyfileRow: some View {
+        HStack {
+            if let path = keyfilePath {
+                Image(systemName: "key.fill")
+                    .foregroundStyle(.secondary)
+                Text((path as NSString).lastPathComponent)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                    .foregroundStyle(.secondary)
+                    .font(.callout)
+                Button(role: .destructive) {
+                    keyfilePath = nil
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+            } else {
+                Button("Add Key File…") { selectKeyfile() }
+                    .font(.callout)
+            }
+        }
+    }
+
+    private func selectKeyfile() {
+        let panel = NSOpenPanel()
+        panel.title = "Select Key File"
+        panel.allowsMultipleSelection = false
+        panel.canChooseDirectories = false
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        keyfilePath = url.path
+    }
+
     // MARK: - Actions
 
     private func unlock() {
         errorMessage = nil
         do {
-            try appState.unlock(password: Data(password.utf8))
+            try appState.unlock(password: Data(password.utf8), keyfilePath: keyfilePath)
             password = ""
         } catch {
             errorMessage = "Could not open vault"
@@ -137,9 +183,26 @@ struct LockScreenView: View {
         showCreateConfirmation = true
     }
 
+    private func importVault() {
+        let panel = NSOpenPanel()
+        panel.title = "Select Vault File"
+        panel.allowedContentTypes = [.init(filenameExtension: "kdbx")!]
+        panel.allowsMultipleSelection = false
+
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+
+        do {
+            try appState.importVault(from: url)
+            errorMessage = nil
+            focusedField = .password
+        } catch {
+            errorMessage = "Could not import vault file"
+        }
+    }
+
     private func doCreate() {
         do {
-            try appState.createVault(password: Data(password.utf8))
+            try appState.createVault(password: Data(password.utf8), keyfilePath: keyfilePath)
             password = ""
             confirmPassword = ""
         } catch {

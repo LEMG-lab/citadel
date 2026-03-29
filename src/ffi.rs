@@ -61,6 +61,7 @@ pub extern "C" fn vault_open(
     path: *const c_char,
     password_ptr: *const u8,
     password_len: u32,
+    keyfile_path: *const c_char,
     handle_out: *mut *mut c_void,
 ) -> VaultResult {
     if path.is_null() || handle_out.is_null() {
@@ -70,7 +71,13 @@ pub extern "C" fn vault_open(
     let result = catch_unwind(std::panic::AssertUnwindSafe(|| {
         let path_str = unsafe { cstr_to_str(path) };
         let pw = unsafe { read_password(password_ptr, password_len) };
-        match VaultState::open(path_str, &pw) {
+        let kf = if keyfile_path.is_null() {
+            None
+        } else {
+            let s = unsafe { cstr_to_str(keyfile_path) };
+            if s.is_empty() { None } else { Some(s) }
+        };
+        match VaultState::open(path_str, &pw, kf) {
             Ok(state) => {
                 let boxed = Box::new(state);
                 unsafe {
@@ -88,6 +95,7 @@ pub extern "C" fn vault_open(
 pub extern "C" fn vault_create(
     password_ptr: *const u8,
     password_len: u32,
+    keyfile_path: *const c_char,
     handle_out: *mut *mut c_void,
 ) -> VaultResult {
     if handle_out.is_null() {
@@ -96,7 +104,13 @@ pub extern "C" fn vault_create(
     crate::memory::disable_core_dumps();
     let result = catch_unwind(std::panic::AssertUnwindSafe(|| {
         let pw = unsafe { read_password(password_ptr, password_len) };
-        match VaultState::create(&pw) {
+        let kf = if keyfile_path.is_null() {
+            None
+        } else {
+            let s = unsafe { cstr_to_str(keyfile_path) };
+            if s.is_empty() { None } else { Some(s) }
+        };
+        match VaultState::create(&pw, kf) {
             Ok(state) => {
                 let boxed = Box::new(state);
                 unsafe {
@@ -131,6 +145,7 @@ pub extern "C" fn vault_validate(
     path: *const c_char,
     password_ptr: *const u8,
     password_len: u32,
+    keyfile_path: *const c_char,
 ) -> VaultResult {
     if path.is_null() {
         return VaultResult::InternalError;
@@ -138,7 +153,13 @@ pub extern "C" fn vault_validate(
     let result = catch_unwind(std::panic::AssertUnwindSafe(|| {
         let path_str = unsafe { cstr_to_str(path) };
         let pw = unsafe { read_password(password_ptr, password_len) };
-        match VaultState::validate(path_str, &pw) {
+        let kf = if keyfile_path.is_null() {
+            None
+        } else {
+            let s = unsafe { cstr_to_str(keyfile_path) };
+            if s.is_empty() { None } else { Some(s) }
+        };
+        match VaultState::validate(path_str, &pw, kf) {
             Ok(()) => VaultResult::Ok,
             Err(e) => e,
         }
@@ -164,6 +185,7 @@ pub extern "C" fn vault_change_password(
     handle: *mut c_void,
     new_password_ptr: *const u8,
     new_password_len: u32,
+    new_keyfile_path: *const c_char,
 ) -> VaultResult {
     if handle.is_null() {
         return VaultResult::InternalError;
@@ -171,7 +193,13 @@ pub extern "C" fn vault_change_password(
     let result = catch_unwind(std::panic::AssertUnwindSafe(|| {
         let state = unsafe { &mut *(handle as *mut VaultState) };
         let pw = unsafe { read_password(new_password_ptr, new_password_len) };
-        match state.change_password(&pw) {
+        let kf = if new_keyfile_path.is_null() {
+            None
+        } else {
+            let s = unsafe { cstr_to_str(new_keyfile_path) };
+            if s.is_empty() { None } else { Some(s) }
+        };
+        match state.change_password(&pw, kf) {
             Ok(()) => VaultResult::Ok,
             Err(e) => e,
         }

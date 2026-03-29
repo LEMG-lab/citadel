@@ -27,9 +27,12 @@ public final class VaultPersistence: Sendable {
     public static func atomicSave(
         engine: VaultEngine,
         vaultPath: String,
-        password: Data
+        password: Data,
+        keyfilePath: String? = nil
     ) throws {
-        let tmpPath = vaultPath + ".tmp"
+        // ITEM 6: Resolve symlinks so .tmp is written to the real directory
+        let resolvedPath = (vaultPath as NSString).resolvingSymlinksInPath
+        let tmpPath = resolvedPath + ".tmp"
         let fm = FileManager.default
 
         // 1. Write to temp file
@@ -41,7 +44,7 @@ public final class VaultPersistence: Sendable {
         // 3. Validate the temp file and verify entry count
         do {
             let verifyEngine = VaultEngine()
-            try verifyEngine.open(path: tmpPath, password: password)
+            try verifyEngine.open(path: tmpPath, password: password, keyfilePath: keyfilePath)
             let savedCount = try verifyEngine.listEntries().count
             verifyEngine.close()
 
@@ -57,28 +60,32 @@ public final class VaultPersistence: Sendable {
         }
 
         // 4. Rotate snapshots: .prev2 → .prev3, .prev → .prev2
-        rotateSnapshots(basePath: vaultPath)
+        rotateSnapshots(basePath: resolvedPath)
 
         // 5. Copy current vault to .prev (vault stays in place — no gap)
-        let prevPath = vaultPath + ".prev"
-        if fm.fileExists(atPath: vaultPath) {
+        let prevPath = resolvedPath + ".prev"
+        if fm.fileExists(atPath: resolvedPath) {
             if fm.fileExists(atPath: prevPath) {
                 try? fm.removeItem(atPath: prevPath)
             }
-            try fm.copyItem(atPath: vaultPath, toPath: prevPath)
+            try fm.copyItem(atPath: resolvedPath, toPath: prevPath)
         }
 
         // 6. Atomic rename temp → vault
         //    POSIX rename() atomically replaces the destination on APFS.
         //    The vault file is never missing — it goes directly from old to new.
-        let renameResult = rename(tmpPath, vaultPath)
+        let renameResult = rename(tmpPath, resolvedPath)
         if renameResult != 0 {
             throw VaultError.writeFailed
         }
 
         // 7. F_FULLFSYNC the directory
-        let dirPath = (vaultPath as NSString).deletingLastPathComponent
+        let dirPath = (resolvedPath as NSString).deletingLastPathComponent
         try fullFsync(directoryPath: dirPath)
+
+        // ITEM 7: Restrictive file permissions
+        try? fm.setAttributes([.posixPermissions: 0o600], ofItemAtPath: resolvedPath)
+        try? fm.setAttributes([.posixPermissions: 0o700], ofItemAtPath: dirPath)
     }
 
     // MARK: - Internal

@@ -29,6 +29,7 @@ fn ffi_open(path: &str, password: &[u8]) -> *mut std::ffi::c_void {
         c_path.as_ptr(),
         password.as_ptr(),
         password.len() as u32,
+        ptr::null(),
         &mut handle,
     );
     assert_eq!(result, VaultResult::Ok, "vault_open failed for {}", path);
@@ -42,6 +43,7 @@ fn ffi_create(password: &[u8]) -> *mut std::ffi::c_void {
     let result = vault_create(
         password.as_ptr(),
         password.len() as u32,
+        ptr::null(),
         &mut handle,
     );
     assert_eq!(result, VaultResult::Ok, "vault_create failed");

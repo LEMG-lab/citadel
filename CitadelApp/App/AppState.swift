@@ -33,6 +33,8 @@ final class AppState {
     let clipboard = SecureClipboard()
     @ObservationIgnored private var autoLockManager: AutoLockManager?
     @ObservationIgnored private var currentPassword: Data?
+    @ObservationIgnored private var currentKeyfilePath: String?
+    let auditLogger: AuditLogger
 
     /// Canonical vault file path.
     let vaultPath: String
@@ -54,6 +56,7 @@ final class AppState {
         let dir = home.appendingPathComponent(".citadel")
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         vaultPath = dir.appendingPathComponent("vault.kdbx").path
+        auditLogger = AuditLogger(vaultDirectory: dir.path)
 
         // Prevent Spotlight from indexing the vault directory
         let noIndex = dir.appendingPathComponent(".metadata_never_index")
@@ -138,23 +141,27 @@ final class AppState {
 
     // MARK: - Vault lifecycle
 
-    func unlock(password: Data) throws {
-        try engine.open(path: vaultPath, password: password)
+    func unlock(password: Data, keyfilePath: String? = nil) throws {
+        try engine.open(path: vaultPath, password: password, keyfilePath: keyfilePath)
         currentPassword = password
+        currentKeyfilePath = keyfilePath
         entries = try engine.listEntries()
         isLocked = false
         errorMessage = nil
         autoLockManager?.start()
+        auditLogger.log(.unlock)
     }
 
-    func createVault(password: Data) throws {
-        try engine.create(password: password)
-        try VaultPersistence.atomicSave(engine: engine, vaultPath: vaultPath, password: password)
+    func createVault(password: Data, keyfilePath: String? = nil) throws {
+        try engine.create(password: password, keyfilePath: keyfilePath)
+        try VaultPersistence.atomicSave(engine: engine, vaultPath: vaultPath, password: password, keyfilePath: keyfilePath)
         currentPassword = password
+        currentKeyfilePath = keyfilePath
         entries = try engine.listEntries()
         isLocked = false
         errorMessage = nil
         autoLockManager?.start()
+        auditLogger.log(.createVault)
     }
 
     func lockVault() {
@@ -165,12 +172,14 @@ final class AppState {
             currentPassword!.resetBytes(in: 0..<currentPassword!.count)
         }
         currentPassword = nil
+        currentKeyfilePath = nil
         entries = []
         selectedEntryID = nil
         errorMessage = nil
         // Clipboard timer manages its own lifecycle — don't forceClear here
         // so the user can still paste after the vault locks on inactivity/sleep.
         isLocked = true
+        auditLogger.log(.lock)
     }
 
     // MARK: - Persistence
@@ -179,7 +188,7 @@ final class AppState {
         guard let pw = currentPassword else {
             throw VaultError.internalError("no password available")
         }
-        try VaultPersistence.atomicSave(engine: engine, vaultPath: vaultPath, password: pw)
+        try VaultPersistence.atomicSave(engine: engine, vaultPath: vaultPath, password: pw, keyfilePath: currentKeyfilePath)
     }
 
     func refreshEntries() throws {
@@ -188,18 +197,18 @@ final class AppState {
 
     // MARK: - Password change
 
-    func changePassword(currentPassword: Data, newPassword: Data) throws {
+    func changePassword(currentPassword: Data, newPassword: Data, newKeyfilePath: String? = nil) throws {
         guard currentPassword == self.currentPassword else {
             throw VaultError.wrongPassword
         }
 
         // Auto-backup before changing (validated + checksummed)
-        let backupURL = try BackupManager.autoBackup(vaultPath: vaultPath, password: currentPassword)
+        let backupURL = try BackupManager.autoBackup(vaultPath: vaultPath, password: currentPassword, keyfilePath: currentKeyfilePath)
 
-        try engine.changePassword(newPassword)
+        try engine.changePassword(newPassword, keyfilePath: newKeyfilePath)
 
         do {
-            try VaultPersistence.atomicSave(engine: engine, vaultPath: vaultPath, password: newPassword)
+            try VaultPersistence.atomicSave(engine: engine, vaultPath: vaultPath, password: newPassword, keyfilePath: newKeyfilePath)
         } catch {
             // Attempt to restore from backup
             engine.close()
@@ -211,7 +220,7 @@ final class AppState {
                     try fm.removeItem(atPath: vaultPath)
                 }
                 try fm.moveItem(at: backupURL, to: URL(fileURLWithPath: vaultPath))
-                try engine.open(path: vaultPath, password: currentPassword)
+                try engine.open(path: vaultPath, password: currentPassword, keyfilePath: self.currentKeyfilePath)
                 self.currentPassword = currentPassword
             } catch {
                 restoreFailed = true
@@ -228,6 +237,8 @@ final class AppState {
         }
 
         self.currentPassword = newPassword
+        self.currentKeyfilePath = newKeyfilePath
+        auditLogger.log(.changePassword)
 
         // Password change succeeded — delete the auto-backup that was encrypted
         // with the old password. Leaving it around lets an attacker brute-force
@@ -237,12 +248,23 @@ final class AppState {
         try? fm.removeItem(at: backupURL.appendingPathExtension("sha256"))
     }
 
+    // MARK: - Import
+
+    /// Import a vault file from an external location (e.g. migration from unsandboxed install).
+    func importVault(from sourceURL: URL) throws {
+        let fm = FileManager.default
+        if fm.fileExists(atPath: vaultPath) {
+            throw VaultError.internalError("A vault already exists at \(vaultPath)")
+        }
+        try fm.copyItem(at: sourceURL, to: URL(fileURLWithPath: vaultPath))
+    }
+
     // MARK: - Backup
 
     func performBackup(to destination: URL) throws {
         guard let pw = currentPassword else {
             throw VaultError.internalError("no password available")
         }
-        try BackupManager.backup(vaultPath: vaultPath, to: destination, password: pw)
+        try BackupManager.backup(vaultPath: vaultPath, to: destination, password: pw, keyfilePath: currentKeyfilePath)
     }
 }

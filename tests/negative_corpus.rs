@@ -45,6 +45,7 @@ fn ffi_open_result(path: &str, password: &[u8]) -> VaultResult {
         c_path.as_ptr(),
         password.as_ptr(),
         password.len() as u32,
+        ptr::null(),
         &mut handle,
     );
     if result == VaultResult::Ok && !handle.is_null() {
@@ -62,7 +63,7 @@ fn neg_01_zero_byte_file() {
     let tmp = write_temp(b"");
     let path = tmp.path().to_str().unwrap();
 
-    let err = VaultState::open(path, b"Test123").unwrap_err();
+    let err = VaultState::open(path, b"Test123", None).unwrap_err();
     assert_ne!(err, VaultResult::Ok, "should fail on empty file");
 
     // FFI path
@@ -80,7 +81,7 @@ fn neg_02_random_bytes() {
     let tmp = write_temp(&data);
     let path = tmp.path().to_str().unwrap();
 
-    let err = VaultState::open(path, b"Test123").unwrap_err();
+    let err = VaultState::open(path, b"Test123", None).unwrap_err();
     assert_ne!(err, VaultResult::Ok);
 
     let result = ffi_open_result(path, b"Test123");
@@ -99,7 +100,7 @@ fn neg_03_truncated_after_magic() {
     let tmp = write_temp(truncated);
     let path = tmp.path().to_str().unwrap();
 
-    let err = VaultState::open(path, b"Test123").unwrap_err();
+    let err = VaultState::open(path, b"Test123", None).unwrap_err();
     assert_ne!(err, VaultResult::Ok);
 
     let result = ffi_open_result(path, b"Test123");
@@ -118,7 +119,7 @@ fn neg_04_single_bit_flip() {
     let tmp = write_temp(&data);
     let path = tmp.path().to_str().unwrap();
 
-    let err = VaultState::open(path, b"Test123").unwrap_err();
+    let err = VaultState::open(path, b"Test123", None).unwrap_err();
     assert_ne!(err, VaultResult::Ok);
 
     let result = ffi_open_result(path, b"Test123");
@@ -140,7 +141,7 @@ fn neg_05_zeroed_tail() {
     let tmp = write_temp(&data);
     let path = tmp.path().to_str().unwrap();
 
-    let err = VaultState::open(path, b"Test123").unwrap_err();
+    let err = VaultState::open(path, b"Test123", None).unwrap_err();
     assert_ne!(err, VaultResult::Ok);
 
     let result = ffi_open_result(path, b"Test123");
@@ -155,7 +156,7 @@ fn neg_05_zeroed_tail() {
 fn neg_06_wrong_password() {
     let path = fixture_path();
 
-    let err = VaultState::open(&path, b"totally-wrong-password").unwrap_err();
+    let err = VaultState::open(&path, b"totally-wrong-password", None).unwrap_err();
     assert_eq!(err, VaultResult::WrongPassword);
 
     let result = ffi_open_result(&path, b"totally-wrong-password");
@@ -172,7 +173,7 @@ fn neg_07_nonexistent_path() {
     // Ensure it really doesn't exist
     let _ = std::fs::remove_file(path);
 
-    let err = VaultState::open(path, b"Test123").unwrap_err();
+    let err = VaultState::open(path, b"Test123", None).unwrap_err();
     assert_eq!(err, VaultResult::FileNotFound);
 
     let result = ffi_open_result(path, b"Test123");
@@ -188,7 +189,7 @@ fn neg_08_directory_path() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().to_str().unwrap();
 
-    let err = VaultState::open(path, b"Test123").unwrap_err();
+    let err = VaultState::open(path, b"Test123", None).unwrap_err();
     assert_ne!(err, VaultResult::Ok);
 
     let result = ffi_open_result(path, b"Test123");
@@ -201,7 +202,7 @@ fn neg_08_directory_path() {
 
 #[test]
 fn neg_09_empty_path() {
-    let err = VaultState::open("", b"Test123").unwrap_err();
+    let err = VaultState::open("", b"Test123", None).unwrap_err();
     assert_ne!(err, VaultResult::Ok);
 
     // FFI: empty C string (just a null terminator)
@@ -211,6 +212,7 @@ fn neg_09_empty_path() {
         c_path.as_ptr(),
         b"Test123".as_ptr(),
         7,
+        ptr::null(),
         &mut handle,
     );
     assert_ne!(result, VaultResult::Ok);
@@ -236,7 +238,7 @@ fn neg_10_valid_header_garbage_payload() {
     let tmp = write_temp(&data);
     let path = tmp.path().to_str().unwrap();
 
-    let err = VaultState::open(path, b"Test123").unwrap_err();
+    let err = VaultState::open(path, b"Test123", None).unwrap_err();
     assert_ne!(err, VaultResult::Ok);
 
     let result = ffi_open_result(path, b"Test123");
@@ -251,7 +253,7 @@ fn neg_10_valid_header_garbage_payload() {
 fn neg_11_fixture_unchanged_after_all_negative_tests() {
     // Re-read the fixture and verify it can still be opened correctly.
     let path = fixture_path();
-    let state = VaultState::open(&path, b"Test123").expect("fixture should still be openable");
+    let state = VaultState::open(&path, b"Test123", None).expect("fixture should still be openable");
     let entries = state.list_entries();
     assert_eq!(entries.len(), 3, "fixture should still have 3 entries");
 }

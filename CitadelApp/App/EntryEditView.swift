@@ -49,6 +49,7 @@ struct EntryEditView: View {
                         }
                         .buttonStyle(.borderless)
                     }
+                    PasswordStrengthBar(password: password)
                     TextField("URL", text: $url)
                     TextField("Notes", text: $notes, axis: .vertical)
                         .lineLimit(3...8)

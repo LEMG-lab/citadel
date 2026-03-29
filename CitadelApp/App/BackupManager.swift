@@ -6,7 +6,7 @@ import CitadelCore
 enum BackupManager {
 
     /// Copy vault to a user-chosen destination, validate the copy, and write a SHA-256 checksum.
-    static func backup(vaultPath: String, to destination: URL, password: Data) throws {
+    static func backup(vaultPath: String, to destination: URL, password: Data, keyfilePath: String? = nil) throws {
         let fm = FileManager.default
         let sourceURL = URL(fileURLWithPath: vaultPath)
 
@@ -17,7 +17,7 @@ enum BackupManager {
         try fm.copyItem(at: sourceURL, to: destination)
 
         // Validate the backup copy can be opened
-        try VaultEngine.validate(path: destination.path, password: password)
+        try VaultEngine.validate(path: destination.path, password: password, keyfilePath: keyfilePath)
 
         // Generate SHA-256 checksum file
         let data = try Data(contentsOf: destination)
@@ -31,7 +31,7 @@ enum BackupManager {
 
     /// Create a timestamped auto-backup in the vault directory (used before password changes).
     /// Validates the copy and writes a SHA-256 checksum, matching the manual backup flow.
-    static func autoBackup(vaultPath: String, password: Data) throws -> URL {
+    static func autoBackup(vaultPath: String, password: Data, keyfilePath: String? = nil) throws -> URL {
         let sourceURL = URL(fileURLWithPath: vaultPath)
         let dir = sourceURL.deletingLastPathComponent()
         let formatter = DateFormatter()
@@ -40,7 +40,7 @@ enum BackupManager {
         try FileManager.default.copyItem(at: sourceURL, to: backupURL)
 
         // Validate the backup can be opened
-        try VaultEngine.validate(path: backupURL.path, password: password)
+        try VaultEngine.validate(path: backupURL.path, password: password, keyfilePath: keyfilePath)
 
         // SHA-256 checksum
         let data = try Data(contentsOf: backupURL)

@@ -8,6 +8,7 @@ struct SettingsView: View {
 
     @State private var showingPasswordChange = false
     @State private var showingRecoverySheet = false
+    @State private var showingAuditLog = false
 
     var body: some View {
         @Bindable var appState = appState
@@ -51,6 +52,12 @@ struct SettingsView: View {
                         showingRecoverySheet = true
                     }
                 }
+
+                Section("Audit") {
+                    Button("View Audit Log") {
+                        showingAuditLog = true
+                    }
+                }
             }
             .formStyle(.grouped)
 
@@ -70,6 +77,9 @@ struct SettingsView: View {
         }
         .sheet(isPresented: $showingRecoverySheet) {
             RecoverySheetView()
+        }
+        .sheet(isPresented: $showingAuditLog) {
+            AuditLogView()
         }
     }
 }

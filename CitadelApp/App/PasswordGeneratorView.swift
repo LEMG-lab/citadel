@@ -37,6 +37,8 @@ struct PasswordGeneratorView: View {
                     .lineLimit(2)
             }
 
+            PasswordStrengthBar(password: generated)
+
             // Length slider
             HStack {
                 Text("Length: \(Int(length))")
