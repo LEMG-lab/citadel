@@ -10,7 +10,6 @@ struct EntryDetailView: View {
     @State private var showPassword = false
     @State private var showingEdit = false
     @State private var showingDeleteConfirmation = false
-    @State private var revealTask: Task<Void, Never>?
     @State private var errorMessage: String?
 
     var body: some View {
@@ -59,10 +58,14 @@ struct EntryDetailView: View {
                             Text(String(repeating: "\u{2022}", count: 12))
                         }
                         Spacer()
-                        Button(showPassword ? "Hide" : "Reveal") {
-                            toggleReveal()
-                        }
-                        .buttonStyle(.borderless)
+                        Image(systemName: "eye")
+                            .foregroundStyle(showPassword ? .primary : .secondary)
+                            .help("Hold to reveal password")
+                            .gesture(
+                                DragGesture(minimumDistance: 0)
+                                    .onChanged { _ in showPassword = true }
+                                    .onEnded { _ in showPassword = false }
+                            )
                         Button("Copy", systemImage: "doc.on.doc") {
                             appState.clipboard.copyPassword(entry.password)
                         }
@@ -117,29 +120,12 @@ struct EntryDetailView: View {
 
     private func loadEntry() {
         showPassword = false
-        revealTask?.cancel()
         do {
             entry = try appState.engine.getEntry(uuid: entryID)
             errorMessage = nil
         } catch {
             entry = nil
             errorMessage = "Could not load entry"
-        }
-    }
-
-    private func toggleReveal() {
-        if showPassword {
-            showPassword = false
-            revealTask?.cancel()
-        } else {
-            showPassword = true
-            revealTask?.cancel()
-            revealTask = Task {
-                try? await Task.sleep(for: .seconds(10))
-                if !Task.isCancelled {
-                    showPassword = false
-                }
-            }
         }
     }
 
