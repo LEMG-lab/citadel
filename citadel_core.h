@@ -48,10 +48,16 @@ typedef struct CEntryListItem {
     char *username;
     char *url;
     char *group;
+    char *entry_type;
     /**
      * Unix timestamp of expiry. 0 means no expiry set.
      */
     int64_t expiry_time;
+    /**
+     * Unix timestamp of last modification. 0 if unknown.
+     */
+    int64_t last_modified;
+    bool is_favorite;
 } CEntryListItem;
 
 /**
@@ -61,6 +67,15 @@ typedef struct CEntryList {
     struct CEntryListItem *entries;
     uint32_t count;
 } CEntryList;
+
+/**
+ * A single custom field on an entry.
+ */
+typedef struct CCustomField {
+    char *key;
+    char *value;
+    bool is_protected;
+} CCustomField;
 
 /**
  * Full entry data including password as a byte buffer (not a C string).
@@ -76,10 +91,18 @@ typedef struct CEntryData {
     char *url;
     char *notes;
     char *otp_uri;
+    char *entry_type;
+    struct CCustomField *custom_fields;
+    uint32_t custom_field_count;
     /**
      * Unix timestamp of expiry. 0 means no expiry set.
      */
     int64_t expiry_time;
+    /**
+     * Unix timestamp of last modification. 0 if unknown.
+     */
+    int64_t last_modified;
+    bool is_favorite;
 } CEntryData;
 
 /**
@@ -183,6 +206,16 @@ void group_list_free(char **groups, uint32_t count);
  * entries removed via `count_out` (set to 0 if no Recycle Bin exists).
  */
 enum VaultResult vault_empty_recyclebin(void *handle, uint32_t *count_out);
+
+enum VaultResult vault_set_favorite(void *handle, const char *uuid_str, bool favorite);
+
+enum VaultResult vault_set_custom_field(void *handle,
+                                        const char *uuid_str,
+                                        const char *key,
+                                        const char *value,
+                                        bool is_protected);
+
+enum VaultResult vault_remove_custom_field(void *handle, const char *uuid_str, const char *key);
 
 /**
  * Generate a random password of `length` bytes into `buf_out`.

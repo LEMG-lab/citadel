@@ -12,7 +12,6 @@ struct LockScreenView: View {
     @State private var showCreateConfirmation = false
     @State private var errorMessage: String?
     @State private var keyfilePath: String?
-    @State private var attemptingBiometric = false
     @FocusState private var focusedField: Field?
 
     private enum Field: Hashable {
@@ -77,18 +76,6 @@ struct LockScreenView: View {
             .buttonStyle(.borderedProminent)
             .keyboardShortcut(.defaultAction)
             .disabled(password.isEmpty || appState.isLoading)
-
-        if appState.biometricManager.isEnabled
-            && appState.biometricManager.isAvailable
-            && !appState.biometricManager.requiresFullAuth
-            && appState.vaultExists {
-            Button {
-                attemptBiometricUnlock()
-            } label: {
-                Label("Unlock with Touch ID", systemImage: "touchid")
-            }
-            .disabled(attemptingBiometric)
-        }
 
         if !appState.vaultExists {
             Divider().frame(width: 200)
@@ -191,24 +178,6 @@ struct LockScreenView: View {
             } catch {
                 errorMessage = "Could not open vault"
             }
-        }
-    }
-
-    private func attemptBiometricUnlock() {
-        attemptingBiometric = true
-        errorMessage = nil
-        Task {
-            do {
-                let pw = try await appState.biometricManager.unlock()
-                try await appState.unlockAsync(password: pw, keyfilePath: nil)
-            } catch BiometricError.authFailed {
-                errorMessage = "Touch ID failed"
-            } catch BiometricError.fullAuthRequired {
-                errorMessage = "Please enter your master password"
-            } catch {
-                errorMessage = "Could not open vault"
-            }
-            attemptingBiometric = false
         }
     }
 

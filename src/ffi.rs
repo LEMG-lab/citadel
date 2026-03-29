@@ -291,7 +291,10 @@ pub extern "C" fn vault_list_entries(
                 username: str_to_c(&s.username),
                 url: str_to_c(&s.url),
                 group: str_to_c(&s.group),
+                entry_type: str_to_c(&s.entry_type),
                 expiry_time: s.expiry_time,
+                last_modified: s.last_modified,
+                is_favorite: s.is_favorite,
             })
             .collect();
 
@@ -342,6 +345,24 @@ pub extern "C" fn vault_get_entry(
                     let boxed = pw_buf.into_boxed_slice();
                     Box::into_raw(boxed) as *mut u8
                 };
+                // Build custom fields array
+                let cf_count = detail.custom_fields.len() as u32;
+                let cf_ptr = if detail.custom_fields.is_empty() {
+                    std::ptr::null_mut()
+                } else {
+                    let cfs: Vec<CCustomField> = detail.custom_fields.iter().map(|f| {
+                        CCustomField {
+                            key: str_to_c(&f.key),
+                            value: str_to_c(&f.value),
+                            is_protected: f.is_protected,
+                        }
+                    }).collect();
+                    let mut boxed = cfs.into_boxed_slice();
+                    let ptr = boxed.as_mut_ptr();
+                    std::mem::forget(boxed);
+                    ptr
+                };
+
                 let data = Box::new(CEntryData {
                     uuid: str_to_c(&detail.uuid),
                     title: str_to_c(&detail.title),
@@ -351,7 +372,12 @@ pub extern "C" fn vault_get_entry(
                     url: str_to_c(&detail.url),
                     notes: str_to_c(&detail.notes),
                     otp_uri: str_to_c(&detail.otp_uri),
+                    entry_type: str_to_c(&detail.entry_type),
+                    custom_fields: cf_ptr,
+                    custom_field_count: cf_count,
                     expiry_time: detail.expiry_time,
+                    last_modified: detail.last_modified,
+                    is_favorite: detail.is_favorite,
                 });
                 unsafe {
                     *entry_out = Box::into_raw(data);
@@ -540,6 +566,87 @@ pub extern "C" fn vault_empty_recyclebin(
 }
 
 // ---------------------------------------------------------------------------
+// Favorites & custom fields
+// ---------------------------------------------------------------------------
+
+#[no_mangle]
+pub extern "C" fn vault_set_favorite(
+    handle: *mut c_void,
+    uuid_str: *const c_char,
+    favorite: bool,
+) -> VaultResult {
+    if handle.is_null() || uuid_str.is_null() {
+        return VaultResult::InternalError;
+    }
+    let result = catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let state = unsafe { &mut *(handle as *mut VaultState) };
+        let uuid_s = unsafe { cstr_to_str(uuid_str) };
+        let uuid = match uuid::Uuid::parse_str(uuid_s) {
+            Ok(u) => u,
+            Err(_) => return VaultResult::InternalError,
+        };
+        match state.set_favorite(uuid, favorite) {
+            Ok(()) => VaultResult::Ok,
+            Err(e) => e,
+        }
+    }));
+    result.unwrap_or(VaultResult::InternalError)
+}
+
+#[no_mangle]
+pub extern "C" fn vault_set_custom_field(
+    handle: *mut c_void,
+    uuid_str: *const c_char,
+    key: *const c_char,
+    value: *const c_char,
+    is_protected: bool,
+) -> VaultResult {
+    if handle.is_null() || uuid_str.is_null() || key.is_null() {
+        return VaultResult::InternalError;
+    }
+    let result = catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let state = unsafe { &mut *(handle as *mut VaultState) };
+        let uuid_s = unsafe { cstr_to_str(uuid_str) };
+        let uuid = match uuid::Uuid::parse_str(uuid_s) {
+            Ok(u) => u,
+            Err(_) => return VaultResult::InternalError,
+        };
+        let key_s = unsafe { cstr_to_str(key) };
+        let value_s = unsafe { cstr_to_str(value) };
+        match state.set_custom_field(uuid, key_s, value_s, is_protected) {
+            Ok(()) => VaultResult::Ok,
+            Err(e) => e,
+        }
+    }));
+    result.unwrap_or(VaultResult::InternalError)
+}
+
+#[no_mangle]
+pub extern "C" fn vault_remove_custom_field(
+    handle: *mut c_void,
+    uuid_str: *const c_char,
+    key: *const c_char,
+) -> VaultResult {
+    if handle.is_null() || uuid_str.is_null() || key.is_null() {
+        return VaultResult::InternalError;
+    }
+    let result = catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let state = unsafe { &mut *(handle as *mut VaultState) };
+        let uuid_s = unsafe { cstr_to_str(uuid_str) };
+        let uuid = match uuid::Uuid::parse_str(uuid_s) {
+            Ok(u) => u,
+            Err(_) => return VaultResult::InternalError,
+        };
+        let key_s = unsafe { cstr_to_str(key) };
+        match state.remove_custom_field(uuid, key_s) {
+            Ok(()) => VaultResult::Ok,
+            Err(e) => e,
+        }
+    }));
+    result.unwrap_or(VaultResult::InternalError)
+}
+
+// ---------------------------------------------------------------------------
 // Password generation
 // ---------------------------------------------------------------------------
 
@@ -609,6 +716,7 @@ pub extern "C" fn entry_list_free(list: *mut CEntryList) {
                 free_c_string(item.username);
                 free_c_string(item.url);
                 free_c_string(item.group);
+                free_c_string(item.entry_type);
             }
         }
     }));
@@ -631,11 +739,24 @@ pub extern "C" fn entry_data_free(data: *mut CEntryData) {
             (&mut *raw).zeroize();
             drop(Box::from_raw(raw));
         }
+        // Free custom fields
+        if !data.custom_fields.is_null() && data.custom_field_count > 0 {
+            let cfs = Vec::from_raw_parts(
+                data.custom_fields,
+                data.custom_field_count as usize,
+                data.custom_field_count as usize,
+            );
+            for cf in cfs {
+                free_c_string(cf.key);
+                free_c_string(cf.value);
+            }
+        }
         free_c_string(data.uuid);
         free_c_string(data.title);
         free_c_string(data.username);
         free_c_string(data.url);
         free_c_string(data.notes);
         free_c_string(data.otp_uri);
+        free_c_string(data.entry_type);
     }));
 }

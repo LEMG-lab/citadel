@@ -33,6 +33,11 @@ final class AppState {
     /// Number of entries that have expired or are expiring within 7 days.
     var expiredEntriesMessage: String?
 
+    /// Tracked biometric state — SwiftUI observes these instead of reading
+    /// BiometricManager directly (which is not @Observable).
+    var biometricEnrolled = false
+    var biometricAvailable = false
+
     // MARK: - Non-observable infrastructure
 
     let engine = VaultEngine()
@@ -41,7 +46,8 @@ final class AppState {
     @ObservationIgnored private var currentPassword: Data?
     @ObservationIgnored private var currentKeyfilePath: String?
     let auditLogger: AuditLogger
-    let biometricManager = BiometricManager()
+    let biometricManager: BiometricManager
+    @ObservationIgnored var statusBar: StatusBarController?
 
     /// Password accessor for biometric enrollment (read-only copy).
     var currentPasswordForBiometric: Data? { currentPassword }
@@ -67,6 +73,8 @@ final class AppState {
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         vaultPath = dir.appendingPathComponent("vault.kdbx").path
         auditLogger = AuditLogger(vaultDirectory: dir.path)
+        biometricManager = BiometricManager(directory: dir.path)
+        biometricManager.unenroll()
 
         // Prevent Spotlight from indexing the vault directory
         let noIndex = dir.appendingPathComponent(".metadata_never_index")
@@ -83,6 +91,20 @@ final class AppState {
         autoLockManager = AutoLockManager { [weak self] in
             self?.lockVault()
         }
+
+        // Initialize tracked biometric state for SwiftUI
+        biometricAvailable = biometricManager.isAvailable
+        biometricEnrolled = biometricManager.isEnabled
+
+        // Menu bar icon
+        statusBar = StatusBarController(appState: self)
+    }
+
+    /// Sync tracked biometric properties from BiometricManager.
+    /// Call after any operation that changes biometric enrollment.
+    func refreshBiometricState() {
+        biometricEnrolled = biometricManager.isEnabled
+        biometricAvailable = biometricManager.isAvailable
     }
 
     /// Check if the vault directory is inside a known cloud sync path.
@@ -162,6 +184,7 @@ final class AppState {
         biometricManager.recordFullAuth()
         auditLogger.log(.unlock)
         checkExpiredEntries()
+        statusBar?.refresh()
     }
 
     /// Async unlock — runs Argon2id off the main thread.
@@ -182,6 +205,7 @@ final class AppState {
         biometricManager.recordFullAuth()
         auditLogger.log(.unlock)
         checkExpiredEntries()
+        statusBar?.refresh()
     }
 
     func createVault(password: Data, keyfilePath: String? = nil) throws {
@@ -194,6 +218,7 @@ final class AppState {
         errorMessage = nil
         autoLockManager?.start()
         auditLogger.log(.createVault)
+        statusBar?.refresh()
     }
 
     /// Async create — runs Argon2id off the main thread.
@@ -213,6 +238,7 @@ final class AppState {
         errorMessage = nil
         autoLockManager?.start()
         auditLogger.log(.createVault)
+        statusBar?.refresh()
     }
 
     func lockVault() {
@@ -227,10 +253,13 @@ final class AppState {
         entries = []
         selectedEntryID = nil
         errorMessage = nil
+        expiredEntriesMessage = nil
+        isLoading = false
         // Clipboard timer manages its own lifecycle — don't forceClear here
         // so the user can still paste after the vault locks on inactivity/sleep.
         isLocked = true
         auditLogger.log(.lock)
+        statusBar?.refresh()
     }
 
     // MARK: - Persistence
@@ -244,6 +273,7 @@ final class AppState {
 
     func refreshEntries() throws {
         entries = try engine.listEntries()
+        statusBar?.refresh()
     }
 
     /// Check for expired entries and set a notification message.
@@ -314,6 +344,7 @@ final class AppState {
         self.currentPassword = newPassword
         self.currentKeyfilePath = newKeyfilePath
         biometricManager.unenroll()
+        refreshBiometricState()
         auditLogger.log(.changePassword)
 
         // Password change succeeded — delete the auto-backup that was encrypted

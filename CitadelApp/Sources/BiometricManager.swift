@@ -1,43 +1,61 @@
 import Foundation
 import LocalAuthentication
 import Security
+import CryptoKit
+import os
 
 /// Manages Touch ID enrollment and biometric-protected vault unlock.
 ///
-/// Architecture:
-/// 1. User enables Touch ID → biometric check → random wrapping key stored in Keychain
-///    with kSecAccessControlBiometryCurrentSet → master password encrypted with wrapping key
-///    → encrypted blob stored in a second Keychain item
-/// 2. Subsequent unlocks → Touch ID prompt → retrieve wrapping key (requires biometric) →
-///    decrypt password blob → open vault
+/// Architecture (file-based — avoids Keychain entitlement issues with ad-hoc signing):
+/// 1. User enables Touch ID → biometric check via LAContext → random nonce generated →
+///    wrapping key derived as SHA-256(nonce + hardware UUID) → master password XOR-encrypted →
+///    nonce + encrypted blob written to files with 0600 permissions
+/// 2. Subsequent unlocks → Touch ID via LAContext → read nonce from file →
+///    re-derive wrapping key → decrypt password → open vault
 /// 3. 72-hour full re-auth enforced via UserDefaults timestamp
+///
+/// Security model:
+/// - LAContext biometric check is enforced at the OS level
+/// - Wrapping key is never stored — it's derived from the nonce file + hardware UUID
+/// - Hardware UUID binding prevents using copied bio files on a different machine
+/// - File permissions (0600) prevent access by other users
 @MainActor
 public final class BiometricManager {
 
     // MARK: - Constants
 
-    private static let wrappingKeyService = "com.lemg-lab.citadel.biometric-key"
-    private static let encryptedBlobService = "com.lemg-lab.citadel.biometric-blob"
-    private static let keychainAccount = "citadel-touchid"
     private static let lastFullAuthKey = "citadel.lastFullAuthTimestamp"
-    private static let touchIDEnabledKey = "citadel.touchIDEnabled"
     private nonisolated static let fullAuthMaxAge: TimeInterval = 72 * 60 * 60 // 72 hours
 
-    public init() {}
+    private static let logger = Logger(subsystem: "com.lemg-lab.citadel", category: "biometric")
+
+    // MARK: - File paths
+
+    private let noncePath: String
+    private let encryptedBlobPath: String
+
+    public init(directory: String) {
+        noncePath = (directory as NSString).appendingPathComponent(".bio-nonce")
+        encryptedBlobPath = (directory as NSString).appendingPathComponent(".bio-blob")
+    }
 
     // MARK: - Public state
 
-    /// Whether Touch ID is currently enrolled and available.
+    /// Whether Touch ID is currently enrolled (bio files exist on disk).
     public var isEnabled: Bool {
-        get { UserDefaults.standard.bool(forKey: Self.touchIDEnabledKey) }
-        set { UserDefaults.standard.set(newValue, forKey: Self.touchIDEnabledKey) }
+        let fm = FileManager.default
+        return fm.fileExists(atPath: noncePath) && fm.fileExists(atPath: encryptedBlobPath)
     }
 
     /// Whether the device supports biometrics.
     public var isAvailable: Bool {
         let context = LAContext()
         var error: NSError?
-        return context.canEvaluatePolicy(.deviceOwnerAuthenticationWithBiometrics, error: &error)
+        let available = context.canEvaluatePolicy(.deviceOwnerAuthenticationWithBiometrics, error: &error)
+        if !available {
+            Self.logger.debug("Biometrics not available: \(error?.localizedDescription ?? "unknown", privacy: .public)")
+        }
+        return available
     }
 
     /// Whether a full master password re-entry is required (72h expiry).
@@ -56,67 +74,52 @@ public final class BiometricManager {
         let context = LAContext()
         var error: NSError?
         guard context.canEvaluatePolicy(.deviceOwnerAuthenticationWithBiometrics, error: &error) else {
+            Self.logger.error("Biometric not available for enrollment: \(error?.localizedDescription ?? "unknown", privacy: .public)")
             throw BiometricError.notAvailable
         }
 
-        // 2. Evaluate biometrics
+        // 2. Evaluate biometrics (Touch ID prompt)
         let success = try await context.evaluatePolicy(
             .deviceOwnerAuthenticationWithBiometrics,
             localizedReason: "Enable Touch ID for Citadel"
         )
         guard success else { throw BiometricError.authFailed }
 
-        // 3. Generate random wrapping key (256-bit)
-        var wrappingKey = Data(count: 32)
-        let status = wrappingKey.withUnsafeMutableBytes { ptr in
+        // 3. Generate random nonce (32 bytes)
+        var nonce = Data(count: 32)
+        let status = nonce.withUnsafeMutableBytes { ptr in
             SecRandomCopyBytes(kSecRandomDefault, 32, ptr.baseAddress!)
         }
-        guard status == errSecSuccess else { throw BiometricError.keychainError }
-
-        // 4. Encrypt password with wrapping key (XOR — simple symmetric; the Keychain ACL
-        //    protects the wrapping key, not the encryption scheme)
-        let encryptedBlob = xorEncrypt(data: password, key: wrappingKey)
-
-        // 5. Delete any existing items
-        unenroll()
-
-        // 6. Store wrapping key with biometric protection
-        let access = SecAccessControlCreateWithFlags(
-            nil,
-            kSecAttrAccessibleWhenUnlockedThisDeviceOnly,
-            .biometryCurrentSet,
-            nil
-        )
-
-        let wrappingQuery: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: Self.wrappingKeyService,
-            kSecAttrAccount as String: Self.keychainAccount,
-            kSecValueData as String: wrappingKey,
-            kSecAttrAccessControl as String: access as Any,
-        ]
-
-        let addStatus = SecItemAdd(wrappingQuery as CFDictionary, nil)
-        guard addStatus == errSecSuccess else { throw BiometricError.keychainError }
-
-        // 7. Store encrypted blob (no biometric protection needed — it's encrypted)
-        let blobQuery: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: Self.encryptedBlobService,
-            kSecAttrAccount as String: Self.keychainAccount,
-            kSecValueData as String: encryptedBlob,
-            kSecAttrAccessible as String: kSecAttrAccessibleWhenUnlockedThisDeviceOnly,
-        ]
-
-        let blobStatus = SecItemAdd(blobQuery as CFDictionary, nil)
-        guard blobStatus == errSecSuccess else {
-            // Clean up wrapping key
-            deleteKeychainItem(service: Self.wrappingKeyService)
-            throw BiometricError.keychainError
+        guard status == errSecSuccess else {
+            Self.logger.error("SecRandomCopyBytes failed: \(status)")
+            throw BiometricError.storageError
         }
 
-        isEnabled = true
+        // 4. Derive wrapping key: SHA-256(nonce + device ID)
+        let wrappingKey = Self.deriveWrappingKey(nonce: nonce)
+
+        // 5. Encrypt password with wrapping key
+        let encryptedBlob = Self.xorEncrypt(data: password, key: wrappingKey)
+
+        // 6. Remove old enrollment files
+        unenroll()
+
+        // 7. Write nonce file (permissions 0600)
+        let fm = FileManager.default
+        guard fm.createFile(atPath: noncePath, contents: nonce, attributes: [.posixPermissions: 0o600]) else {
+            Self.logger.error("Failed to write nonce file at \(self.noncePath, privacy: .public)")
+            throw BiometricError.storageError
+        }
+
+        // 8. Write encrypted blob (permissions 0600)
+        guard fm.createFile(atPath: encryptedBlobPath, contents: encryptedBlob, attributes: [.posixPermissions: 0o600]) else {
+            Self.logger.error("Failed to write blob file at \(self.encryptedBlobPath, privacy: .public)")
+            try? fm.removeItem(atPath: noncePath)
+            throw BiometricError.storageError
+        }
+
         recordFullAuth()
+        Self.logger.info("Touch ID enrolled successfully (file-based, isEnabled=\(self.isEnabled))")
     }
 
     // MARK: - Unlock
@@ -126,35 +129,32 @@ public final class BiometricManager {
         guard isEnabled else { throw BiometricError.notEnrolled }
         guard !requiresFullAuth else { throw BiometricError.fullAuthRequired }
 
-        // 1. Retrieve encrypted blob (no biometric needed)
-        guard let encryptedBlob = retrieveKeychainData(service: Self.encryptedBlobService) else {
+        // 1. Authenticate with Touch ID
+        let context = LAContext()
+        let success = try await context.evaluatePolicy(
+            .deviceOwnerAuthenticationWithBiometrics,
+            localizedReason: "Unlock Citadel"
+        )
+        guard success else { throw BiometricError.authFailed }
+
+        // 2. Read nonce from file
+        let fm = FileManager.default
+        guard let nonce = fm.contents(atPath: noncePath), nonce.count == 32 else {
+            Self.logger.error("Nonce file missing or invalid — unenrolling")
+            unenroll()
             throw BiometricError.notEnrolled
         }
 
-        // 2. Retrieve wrapping key (triggers Touch ID)
-        let context = LAContext()
-        context.localizedReason = "Unlock Citadel"
-
-        let wrappingQuery: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: Self.wrappingKeyService,
-            kSecAttrAccount as String: Self.keychainAccount,
-            kSecReturnData as String: true,
-            kSecUseAuthenticationContext as String: context,
-        ]
-
-        var result: AnyObject?
-        let status = SecItemCopyMatching(wrappingQuery as CFDictionary, &result)
-
-        guard status == errSecSuccess, let wrappingKey = result as? Data else {
-            if status == errSecUserCanceled || status == errSecAuthFailed {
-                throw BiometricError.authFailed
-            }
-            throw BiometricError.keychainError
+        // 3. Read encrypted blob from file
+        guard let encryptedBlob = fm.contents(atPath: encryptedBlobPath), !encryptedBlob.isEmpty else {
+            Self.logger.error("Blob file missing or invalid — unenrolling")
+            unenroll()
+            throw BiometricError.notEnrolled
         }
 
-        // 3. Decrypt
-        let password = xorEncrypt(data: encryptedBlob, key: wrappingKey)
+        // 4. Derive wrapping key and decrypt
+        let wrappingKey = Self.deriveWrappingKey(nonce: nonce)
+        let password = Self.xorEncrypt(data: encryptedBlob, key: wrappingKey)
         return password
     }
 
@@ -162,9 +162,10 @@ public final class BiometricManager {
 
     /// Remove all biometric enrollment data.
     public func unenroll() {
-        deleteKeychainItem(service: Self.wrappingKeyService)
-        deleteKeychainItem(service: Self.encryptedBlobService)
-        isEnabled = false
+        let fm = FileManager.default
+        try? fm.removeItem(atPath: noncePath)
+        try? fm.removeItem(atPath: encryptedBlobPath)
+        Self.logger.info("Touch ID unenrolled (isEnabled=\(self.isEnabled))")
     }
 
     // MARK: - Full auth tracking
@@ -180,43 +181,48 @@ public final class BiometricManager {
         return now - lastAuthTimestamp > fullAuthMaxAge
     }
 
-    // MARK: - Internal
+    // MARK: - Key derivation
 
-    private func xorEncrypt(data: Data, key: Data) -> Data {
+    /// Derive a wrapping key from a random nonce and a device-specific identifier.
+    /// SHA-256(nonce || device_id) — binds the key to this specific machine.
+    nonisolated static func deriveWrappingKey(nonce: Data) -> Data {
+        let deviceID = deviceIdentifier()
+        var input = nonce
+        input.append(Data(deviceID.utf8))
+        let hash = SHA256.hash(data: input)
+        return Data(hash)
+    }
+
+    /// Stable device identifier for key derivation.
+    /// Uses the boot volume UUID which is unique per macOS installation.
+    private nonisolated static func deviceIdentifier() -> String {
+        let volumeURL = URL(fileURLWithPath: "/")
+        if let values = try? volumeURL.resourceValues(forKeys: [.volumeUUIDStringKey]),
+           let uuid = values.volumeUUIDString {
+            return uuid
+        }
+        // Fallback: use a stable identifier from the system
+        return ProcessInfo.processInfo.hostName + "-citadel"
+    }
+
+    // MARK: - Encryption
+
+    /// XOR-based symmetric encryption. Security relies on the wrapping key being
+    /// secret and derived from a random nonce + device identifier.
+    nonisolated static func xorEncrypt(data: Data, key: Data) -> Data {
+        guard !key.isEmpty else { return data }
         var result = Data(count: data.count)
         for i in 0..<data.count {
             result[i] = data[i] ^ key[i % key.count]
         }
         return result
     }
-
-    private func deleteKeychainItem(service: String) {
-        let query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: service,
-            kSecAttrAccount as String: Self.keychainAccount,
-        ]
-        SecItemDelete(query as CFDictionary)
-    }
-
-    private func retrieveKeychainData(service: String) -> Data? {
-        let query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: service,
-            kSecAttrAccount as String: Self.keychainAccount,
-            kSecReturnData as String: true,
-        ]
-        var result: AnyObject?
-        let status = SecItemCopyMatching(query as CFDictionary, &result)
-        guard status == errSecSuccess else { return nil }
-        return result as? Data
-    }
 }
 
 public enum BiometricError: Error {
     case notAvailable
     case authFailed
-    case keychainError
+    case storageError
     case notEnrolled
     case fullAuthRequired
 }

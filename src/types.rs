@@ -22,8 +22,12 @@ pub struct CEntryListItem {
     pub username: *mut c_char,
     pub url: *mut c_char,
     pub group: *mut c_char,
+    pub entry_type: *mut c_char,
     /// Unix timestamp of expiry. 0 means no expiry set.
     pub expiry_time: i64,
+    /// Unix timestamp of last modification. 0 if unknown.
+    pub last_modified: i64,
+    pub is_favorite: bool,
 }
 
 /// Owned list of entry summaries, allocated by Rust, freed by `entry_list_free`.
@@ -31,6 +35,14 @@ pub struct CEntryListItem {
 pub struct CEntryList {
     pub entries: *mut CEntryListItem,
     pub count: u32,
+}
+
+/// A single custom field on an entry.
+#[repr(C)]
+pub struct CCustomField {
+    pub key: *mut c_char,
+    pub value: *mut c_char,
+    pub is_protected: bool,
 }
 
 /// Full entry data including password as a byte buffer (not a C string).
@@ -46,8 +58,14 @@ pub struct CEntryData {
     pub url: *mut c_char,
     pub notes: *mut c_char,
     pub otp_uri: *mut c_char,
+    pub entry_type: *mut c_char,
+    pub custom_fields: *mut CCustomField,
+    pub custom_field_count: u32,
     /// Unix timestamp of expiry. 0 means no expiry set.
     pub expiry_time: i64,
+    /// Unix timestamp of last modification. 0 if unknown.
+    pub last_modified: i64,
+    pub is_favorite: bool,
 }
 
 /// Bitmask flags for password character sets.

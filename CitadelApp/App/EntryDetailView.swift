@@ -15,6 +15,10 @@ struct EntryDetailView: View {
     @State private var totpSecondsRemaining: Int = 0
     @State private var totpTimer: Timer?
 
+    private var isSecureNote: Bool {
+        entry?.entryType == "secure_note"
+    }
+
     var body: some View {
         Group {
             if let entry {
@@ -39,51 +43,54 @@ struct EntryDetailView: View {
         Form {
             Section("Details") {
                 LabeledContent("Title", value: entry.title)
-                LabeledContent("Username") {
-                    HStack {
-                        Text(entry.username)
-                            .textSelection(.enabled)
-                        Spacer()
-                        Button("Copy", systemImage: "doc.on.doc") {
-                            copyUsername(entry.username)
-                        }
-                        .buttonStyle(.borderless)
-                        .labelStyle(.iconOnly)
-                    }
-                }
-                LabeledContent("Password") {
-                    HStack {
-                        if showPassword {
-                            Text(String(decoding: entry.password, as: UTF8.self))
+
+                if !isSecureNote {
+                    LabeledContent("Username") {
+                        HStack {
+                            Text(entry.username)
                                 .textSelection(.enabled)
-                                .font(.system(.body, design: .monospaced))
-                        } else {
-                            Text(String(repeating: "\u{2022}", count: 12))
+                            Spacer()
+                            Button("Copy", systemImage: "doc.on.doc") {
+                                copyUsername(entry.username)
+                            }
+                            .buttonStyle(.borderless)
+                            .labelStyle(.iconOnly)
                         }
-                        Spacer()
-                        Image(systemName: "eye")
-                            .foregroundStyle(showPassword ? .primary : .secondary)
-                            .help("Hold to reveal password")
-                            .gesture(
-                                DragGesture(minimumDistance: 0)
-                                    .onChanged { _ in showPassword = true }
-                                    .onEnded { _ in showPassword = false }
-                            )
-                        Button("Copy", systemImage: "doc.on.doc") {
-                            appState.clipboard.copyPassword(entry.password)
-                        }
-                        .buttonStyle(.borderless)
-                        .labelStyle(.iconOnly)
                     }
-                }
-                if !entry.url.isEmpty {
-                    LabeledContent("URL") {
-                        Text(entry.url)
-                            .textSelection(.enabled)
+                    LabeledContent("Password") {
+                        HStack {
+                            if showPassword {
+                                Text(String(decoding: entry.password, as: UTF8.self))
+                                    .textSelection(.enabled)
+                                    .font(.system(.body, design: .monospaced))
+                            } else {
+                                Text(String(repeating: "\u{2022}", count: 12))
+                            }
+                            Spacer()
+                            Image(systemName: "eye")
+                                .foregroundStyle(showPassword ? .primary : .secondary)
+                                .help("Hold to reveal password")
+                                .gesture(
+                                    DragGesture(minimumDistance: 0)
+                                        .onChanged { _ in showPassword = true }
+                                        .onEnded { _ in showPassword = false }
+                                )
+                            Button("Copy", systemImage: "doc.on.doc") {
+                                appState.clipboard.copyPassword(entry.password)
+                            }
+                            .buttonStyle(.borderless)
+                            .labelStyle(.iconOnly)
+                        }
+                    }
+                    if !entry.url.isEmpty {
+                        LabeledContent("URL") {
+                            Text(entry.url)
+                                .textSelection(.enabled)
+                        }
                     }
                 }
                 if !entry.notes.isEmpty {
-                    LabeledContent("Notes") {
+                    LabeledContent(isSecureNote ? "Content" : "Notes") {
                         Text(entry.notes)
                             .textSelection(.enabled)
                     }
@@ -113,7 +120,7 @@ struct EntryDetailView: View {
                 }
             }
 
-            if !entry.otpURI.isEmpty, TOTPGenerator(uri: entry.otpURI) != nil {
+            if !isSecureNote, !entry.otpURI.isEmpty, TOTPGenerator(uri: entry.otpURI) != nil {
                 Section("Two-Factor Authentication") {
                     LabeledContent("TOTP Code") {
                         HStack {
@@ -135,12 +142,46 @@ struct EntryDetailView: View {
                 .onAppear { startTOTPTimer(uri: entry.otpURI) }
                 .onDisappear { stopTOTPTimer() }
             }
+
+            if !entry.customFields.isEmpty {
+                Section("Custom Fields") {
+                    ForEach(entry.customFields) { field in
+                        LabeledContent(field.key) {
+                            HStack {
+                                if field.isProtected {
+                                    Text(String(repeating: "\u{2022}", count: 8))
+                                        .foregroundStyle(.secondary)
+                                } else {
+                                    Text(field.value)
+                                        .textSelection(.enabled)
+                                }
+                                Spacer()
+                                Button("Copy", systemImage: "doc.on.doc") {
+                                    let pb = NSPasteboard.general
+                                    pb.clearContents()
+                                    pb.setString(field.value, forType: .string)
+                                }
+                                .buttonStyle(.borderless)
+                                .labelStyle(.iconOnly)
+                            }
+                        }
+                    }
+                }
+            }
         }
         .formStyle(.grouped)
         .toolbar {
             ToolbarItemGroup(placement: .primaryAction) {
-                Button("Copy Password", systemImage: "key") {
-                    appState.clipboard.copyPassword(entry.password)
+                Button(entry.isFavorite ? "Unfavorite" : "Favorite",
+                       systemImage: entry.isFavorite ? "star.fill" : "star") {
+                    toggleFavorite()
+                }
+                .help(entry.isFavorite ? "Remove from favorites" : "Add to favorites")
+
+                if !isSecureNote {
+                    Button("Copy Password", systemImage: "key") {
+                        appState.clipboard.copyPassword(entry.password)
+                    }
                 }
                 Button("Edit", systemImage: "pencil") {
                     showingEdit = true
@@ -182,6 +223,18 @@ struct EntryDetailView: View {
         let pb = NSPasteboard.general
         pb.clearContents()
         pb.setString(username, forType: .string)
+    }
+
+    private func toggleFavorite() {
+        guard let entry else { return }
+        do {
+            try appState.engine.setFavorite(uuid: entry.uuid, favorite: !entry.isFavorite)
+            try appState.save()
+            try appState.refreshEntries()
+            loadEntry()
+        } catch {
+            errorMessage = "Could not update favorite"
+        }
     }
 
     private func startTOTPTimer(uri: String) {

@@ -36,10 +36,10 @@ struct MainView: View {
                     showingAddEntry = true
                 }
                 Menu {
-                    Button("Export CSV…") { exportCSV() }
-                    Button("Import CSV…") { importCSV() }
+                    Button("Export CSV\u{2026}") { exportCSV() }
+                    Button("Import CSV\u{2026}") { importCSV() }
                     Divider()
-                    Button("Backup Vault…") { performBackup() }
+                    Button("Backup Vault\u{2026}") { performBackup() }
                 } label: {
                     Label("More", systemImage: "ellipsis.circle")
                 }
@@ -74,7 +74,9 @@ struct MainView: View {
         } message: {
             Text(appState.expiredEntriesMessage ?? "")
         }
-        .onAppear {
+        .task {
+            // Delay to allow NavigationSplitView toolbar to fully set up
+            try? await Task.sleep(for: .milliseconds(500))
             if appState.expiredEntriesMessage != nil {
                 showingExpiredAlert = true
             }
@@ -84,6 +86,33 @@ struct MainView: View {
                 showingExpiredAlert = true
             }
         }
+        // Keyboard shortcut notifications
+        .onReceive(NotificationCenter.default.publisher(for: .citadelNewEntry)) { _ in
+            showingAddEntry = true
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .citadelShowSettings)) { _ in
+            showingSettings = true
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .citadelCopyPassword)) { _ in
+            copySelectedPassword()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .citadelCopyUsername)) { _ in
+            copySelectedUsername()
+        }
+    }
+
+    private func copySelectedPassword() {
+        guard let id = appState.selectedEntryID,
+              let entry = try? appState.engine.getEntry(uuid: id) else { return }
+        appState.clipboard.copyPassword(entry.password)
+    }
+
+    private func copySelectedUsername() {
+        guard let id = appState.selectedEntryID,
+              let entry = try? appState.engine.getEntry(uuid: id) else { return }
+        let pb = NSPasteboard.general
+        pb.clearContents()
+        pb.setString(entry.username, forType: .string)
     }
 
     private func exportCSV() {

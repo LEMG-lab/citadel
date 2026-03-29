@@ -45,4 +45,39 @@ struct BiometricManagerTests {
         let now = Date().timeIntervalSince1970
         #expect(BiometricManager.isFullAuthRequired(lastAuthTimestamp: -1, now: now))
     }
+
+    @Test("XOR encrypt/decrypt roundtrip")
+    func xorRoundtrip() {
+        let password = Data("hunter2-sécrét-🔑".utf8)
+        let key = Data((0..<32).map { UInt8($0) })
+        let encrypted = BiometricManager.xorEncrypt(data: password, key: key)
+        #expect(encrypted != password)
+        let decrypted = BiometricManager.xorEncrypt(data: encrypted, key: key)
+        #expect(decrypted == password)
+    }
+
+    @Test("Key derivation is deterministic")
+    func keyDerivationDeterministic() {
+        let nonce = Data((0..<32).map { UInt8($0) })
+        let key1 = BiometricManager.deriveWrappingKey(nonce: nonce)
+        let key2 = BiometricManager.deriveWrappingKey(nonce: nonce)
+        #expect(key1 == key2)
+        #expect(key1.count == 32) // SHA-256 output
+    }
+
+    @Test("Different nonces produce different keys")
+    func keyDerivationDifferentNonces() {
+        let nonce1 = Data((0..<32).map { UInt8($0) })
+        let nonce2 = Data((0..<32).map { UInt8($0 &+ 1) })
+        let key1 = BiometricManager.deriveWrappingKey(nonce: nonce1)
+        let key2 = BiometricManager.deriveWrappingKey(nonce: nonce2)
+        #expect(key1 != key2)
+    }
+
+    @Test("XOR with empty key returns original data")
+    func xorEmptyKey() {
+        let data = Data("test".utf8)
+        let result = BiometricManager.xorEncrypt(data: data, key: Data())
+        #expect(result == data)
+    }
 }

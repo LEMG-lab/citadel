@@ -7,6 +7,14 @@ enum EntryEditMode {
     case edit(VaultEntryDetail)
 }
 
+/// Editable custom field model.
+struct EditableCustomField: Identifiable {
+    let id = UUID()
+    var key: String
+    var value: String
+    var isProtected: Bool
+}
+
 /// Entry creation / editing sheet.
 struct EntryEditView: View {
     @Environment(AppState.self) private var appState
@@ -23,13 +31,19 @@ struct EntryEditView: View {
     @State private var group = ""
     @State private var newGroupName = ""
     @State private var hasExpiry = false
-    @State private var expiryDate = Date().addingTimeInterval(90 * 24 * 3600) // default 90 days
+    @State private var expiryDate = Date().addingTimeInterval(90 * 24 * 3600)
     @State private var showingGenerator = false
     @State private var errorMessage: String?
+    @State private var entryType = "password"
+    @State private var customFields: [EditableCustomField] = []
 
     private var isEditing: Bool {
         if case .edit = mode { return true }
         return false
+    }
+
+    private var isSecureNote: Bool {
+        entryType == "secure_note"
     }
 
     private var existingGroups: [String] {
@@ -43,31 +57,48 @@ struct EntryEditView: View {
     var body: some View {
         VStack(spacing: 0) {
             Form {
+                if !isEditing {
+                    Section("Entry Type") {
+                        Picker("Type", selection: $entryType) {
+                            Text("Password Entry").tag("password")
+                            Text("Secure Note").tag("secure_note")
+                        }
+                        .pickerStyle(.segmented)
+                    }
+                }
+
                 Section {
                     TextField("Title", text: $title)
-                    TextField("Username", text: $username)
-                    HStack {
-                        if showPassword {
-                            TextField("Password", text: $password)
-                                .font(.system(.body, design: .monospaced))
-                        } else {
-                            SecureField("Password", text: $password)
+
+                    if !isSecureNote {
+                        TextField("Username", text: $username)
+                        HStack {
+                            if showPassword {
+                                TextField("Password", text: $password)
+                                    .font(.system(.body, design: .monospaced))
+                            } else {
+                                SecureField("Password", text: $password)
+                            }
+                            Button(showPassword ? "Hide" : "Show") {
+                                showPassword.toggle()
+                            }
+                            .buttonStyle(.borderless)
+                            Button("Generate") {
+                                showingGenerator = true
+                            }
+                            .buttonStyle(.borderless)
                         }
-                        Button(showPassword ? "Hide" : "Show") {
-                            showPassword.toggle()
-                        }
-                        .buttonStyle(.borderless)
-                        Button("Generate") {
-                            showingGenerator = true
-                        }
-                        .buttonStyle(.borderless)
+                        PasswordStrengthBar(password: password)
+                        TextField("URL", text: $url)
                     }
-                    PasswordStrengthBar(password: password)
-                    TextField("URL", text: $url)
-                    TextField("Notes", text: $notes, axis: .vertical)
+
+                    TextField(isSecureNote ? "Content" : "Notes", text: $notes, axis: .vertical)
                         .lineLimit(3...8)
-                    TextField("TOTP URI (otpauth://...)", text: $otpURI)
-                        .font(.system(.body, design: .monospaced))
+
+                    if !isSecureNote {
+                        TextField("TOTP URI (otpauth://...)", text: $otpURI)
+                            .font(.system(.body, design: .monospaced))
+                    }
                 }
 
                 if !isEditing {
@@ -89,6 +120,30 @@ struct EntryEditView: View {
                     Toggle("Set expiry date", isOn: $hasExpiry)
                     if hasExpiry {
                         DatePicker("Expires on", selection: $expiryDate, displayedComponents: .date)
+                    }
+                }
+
+                Section("Custom Fields") {
+                    ForEach($customFields) { $field in
+                        HStack {
+                            TextField("Name", text: $field.key)
+                                .frame(maxWidth: 120)
+                            TextField("Value", text: $field.value)
+                            Toggle("Protected", isOn: $field.isProtected)
+                                .toggleStyle(.checkbox)
+                                .labelsHidden()
+                                .help("Protect this field")
+                            Button(role: .destructive) {
+                                customFields.removeAll { $0.id == field.id }
+                            } label: {
+                                Image(systemName: "minus.circle.fill")
+                                    .foregroundStyle(.red)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                    Button("Add Field") {
+                        customFields.append(EditableCustomField(key: "", value: "", isProtected: false))
                     }
                 }
 
@@ -114,7 +169,7 @@ struct EntryEditView: View {
             }
             .padding()
         }
-        .frame(minWidth: 440, minHeight: 360)
+        .frame(minWidth: 440, minHeight: 400)
         .onAppear { populateFields() }
         .sheet(isPresented: $showingGenerator) {
             PasswordGeneratorView { generated in
@@ -132,9 +187,13 @@ struct EntryEditView: View {
             url = entry.url
             notes = entry.notes
             otpURI = entry.otpURI
+            entryType = entry.entryType.isEmpty ? "password" : entry.entryType
             if let exp = entry.expiryDate {
                 hasExpiry = true
                 expiryDate = exp
+            }
+            customFields = entry.customFields.map {
+                EditableCustomField(key: $0.key, value: $0.value, isProtected: $0.isProtected)
             }
         }
     }
@@ -142,16 +201,30 @@ struct EntryEditView: View {
     private func save() {
         errorMessage = nil
         do {
-            let pwData = Data(password.utf8)
+            let pwData = isSecureNote ? Data() : Data(password.utf8)
             let expiry: Date? = hasExpiry ? expiryDate : nil
             switch mode {
             case .add:
                 let uuid = try appState.engine.addEntry(
-                    title: title, username: username,
-                    password: pwData, url: url, notes: notes,
-                    otpURI: otpURI, group: effectiveGroup,
+                    title: title, username: isSecureNote ? "" : username,
+                    password: pwData, url: isSecureNote ? "" : url, notes: notes,
+                    otpURI: isSecureNote ? "" : otpURI, group: effectiveGroup,
                     expiryDate: expiry
                 )
+                // Set entry type
+                if entryType == "secure_note" {
+                    try appState.engine.setCustomField(
+                        uuid: uuid, key: "Citadel_EntryType",
+                        value: "secure_note", isProtected: false
+                    )
+                }
+                // Save custom fields
+                for field in customFields where !field.key.isEmpty {
+                    try appState.engine.setCustomField(
+                        uuid: uuid, key: field.key,
+                        value: field.value, isProtected: field.isProtected
+                    )
+                }
                 try appState.save()
                 try appState.refreshEntries()
                 appState.selectedEntryID = uuid
@@ -161,6 +234,19 @@ struct EntryEditView: View {
                     password: pwData, url: url, notes: notes,
                     otpURI: otpURI, expiryDate: expiry
                 )
+                // Sync custom fields: remove old ones not in new set, add/update new ones
+                let newKeys = Set(customFields.filter { !$0.key.isEmpty }.map(\.key))
+                for old in entry.customFields {
+                    if !newKeys.contains(old.key) {
+                        try appState.engine.removeCustomField(uuid: entry.uuid, key: old.key)
+                    }
+                }
+                for field in customFields where !field.key.isEmpty {
+                    try appState.engine.setCustomField(
+                        uuid: entry.uuid, key: field.key,
+                        value: field.value, isProtected: field.isProtected
+                    )
+                }
                 try appState.save()
                 try appState.refreshEntries()
             }

@@ -240,7 +240,11 @@ impl VaultState {
             url: entry.get_url().unwrap_or("").to_string(),
             notes: entry.get("Notes").unwrap_or("").to_string(),
             otp_uri: entry.get("otp").unwrap_or("").to_string(),
+            entry_type: entry.get("Citadel_EntryType").unwrap_or("").to_string(),
+            custom_fields: collect_custom_fields(entry),
             expiry_time: entry_expiry_timestamp(entry),
+            last_modified: entry_last_modified(entry),
+            is_favorite: entry.get("Citadel_Favorite").map_or(false, |v| v == "true"),
         })
     }
 
@@ -369,6 +373,38 @@ impl VaultState {
         Ok(())
     }
 
+    /// Set or clear the favorite flag on an entry.
+    pub fn set_favorite(&mut self, uuid: uuid::Uuid, favorite: bool) -> Result<(), VaultResult> {
+        let entry = self.db.root.entry_by_uuid_mut(uuid)
+            .ok_or(VaultResult::InternalError)?;
+        if favorite {
+            entry.set_unprotected("Citadel_Favorite", "true");
+        } else {
+            entry.fields.remove("Citadel_Favorite");
+        }
+        Ok(())
+    }
+
+    /// Set a custom field on an entry.
+    pub fn set_custom_field(&mut self, uuid: uuid::Uuid, key: &str, value: &str, is_protected: bool) -> Result<(), VaultResult> {
+        let entry = self.db.root.entry_by_uuid_mut(uuid)
+            .ok_or(VaultResult::InternalError)?;
+        if is_protected {
+            entry.set_protected(key, value);
+        } else {
+            entry.set_unprotected(key, value);
+        }
+        Ok(())
+    }
+
+    /// Remove a custom field from an entry.
+    pub fn remove_custom_field(&mut self, uuid: uuid::Uuid, key: &str) -> Result<(), VaultResult> {
+        let entry = self.db.root.entry_by_uuid_mut(uuid)
+            .ok_or(VaultResult::InternalError)?;
+        entry.fields.remove(key);
+        Ok(())
+    }
+
     /// Soft-delete an entry by UUID: move to Recycle Bin and record a DeletedObject.
     pub fn delete_entry(&mut self, uuid: uuid::Uuid) -> Result<(), VaultResult> {
         // Extract the entry from wherever it lives
@@ -434,8 +470,18 @@ pub struct EntrySummary {
     pub username: String,
     pub url: String,
     pub group: String,
+    pub entry_type: String,
     /// Unix timestamp of expiry. 0 if expiry is not enabled.
     pub expiry_time: i64,
+    /// Unix timestamp of last modification. 0 if unknown.
+    pub last_modified: i64,
+    pub is_favorite: bool,
+}
+
+pub struct CustomField {
+    pub key: String,
+    pub value: String,
+    pub is_protected: bool,
 }
 
 pub struct EntryDetail {
@@ -446,8 +492,13 @@ pub struct EntryDetail {
     pub url: String,
     pub notes: String,
     pub otp_uri: String,
+    pub entry_type: String,
+    pub custom_fields: Vec<CustomField>,
     /// Unix timestamp of expiry. 0 if expiry is not enabled.
     pub expiry_time: i64,
+    /// Unix timestamp of last modification. 0 if unknown.
+    pub last_modified: i64,
+    pub is_favorite: bool,
 }
 
 fn collect_entries(group: &Group, out: &mut Vec<EntrySummary>, skip_group: uuid::Uuid, path: &str) {
@@ -458,7 +509,10 @@ fn collect_entries(group: &Group, out: &mut Vec<EntrySummary>, skip_group: uuid:
             username: entry.get_username().unwrap_or("").to_string(),
             url: entry.get_url().unwrap_or("").to_string(),
             group: path.to_string(),
+            entry_type: entry.get("Citadel_EntryType").unwrap_or("").to_string(),
             expiry_time: entry_expiry_timestamp(entry),
+            last_modified: entry_last_modified(entry),
+            is_favorite: entry.get("Citadel_Favorite").map_or(false, |v| v == "true"),
         });
     }
     for child in &group.groups {
@@ -640,6 +694,37 @@ fn entry_expiry_timestamp(entry: &Entry) -> i64 {
         }
     }
     0
+}
+
+/// Extract the last modification timestamp from an entry.
+fn entry_last_modified(entry: &Entry) -> i64 {
+    entry.times.last_modification
+        .map(|dt| dt.and_utc().timestamp())
+        .unwrap_or(0)
+}
+
+/// Standard fields to exclude when collecting custom fields.
+const STANDARD_FIELDS: &[&str] = &[
+    "Title", "UserName", "Password", "URL", "Notes", "otp",
+    "Citadel_Favorite", "Citadel_EntryType",
+];
+
+/// Collect all non-standard fields from an entry as custom fields.
+fn collect_custom_fields(entry: &Entry) -> Vec<CustomField> {
+    let mut fields = Vec::new();
+    for (key, value) in &entry.fields {
+        if STANDARD_FIELDS.contains(&key.as_str()) {
+            continue;
+        }
+        let is_protected = !matches!(value, keepass::db::Value::Unprotected(_));
+        let val = entry.get(key).unwrap_or("").to_string();
+        fields.push(CustomField {
+            key: key.clone(),
+            value: val,
+            is_protected,
+        });
+    }
+    fields
 }
 
 /// Navigate to (or create) a group by slash-separated path relative to root.

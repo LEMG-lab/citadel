@@ -21,19 +21,32 @@ struct EntryListView: View {
             source = source.filter { $0.group == group || $0.group.hasPrefix(group + "/") }
         }
 
+        var results: [(entry: VaultEntrySummary, score: Int)]
+
         if searchText.isEmpty {
-            return source.map { ($0, 0) }
+            results = source.map { ($0, 0) }
+        } else {
+            let query = searchText
+            results = source.compactMap { entry in
+                let result = FuzzyMatch.bestMatch(
+                    query: query,
+                    fields: [entry.title, entry.username, entry.url]
+                )
+                guard result.score > 0 else { return nil }
+                return (entry, result.score)
+            }
+            .sorted { $0.score > $1.score }
         }
-        let query = searchText
-        return source.compactMap { entry in
-            let result = FuzzyMatch.bestMatch(
-                query: query,
-                fields: [entry.title, entry.username, entry.url]
-            )
-            guard result.score > 0 else { return nil }
-            return (entry, result.score)
+
+        // Sort favorites first (stable sort preserves relative order within each group)
+        results.sort { lhs, rhs in
+            if lhs.entry.isFavorite != rhs.entry.isFavorite {
+                return lhs.entry.isFavorite
+            }
+            return false
         }
-        .sorted { $0.score > $1.score }
+
+        return results
     }
 
     var body: some View {
@@ -45,17 +58,27 @@ struct EntryListView: View {
 
             List(filteredEntries, id: \.entry.id, selection: $appState.selectedEntryID) { item in
                 HStack {
+                    entryIcon(item.entry)
+                        .frame(width: 16)
+                        .foregroundStyle(.secondary)
                     VStack(alignment: .leading, spacing: 2) {
-                        highlightedText(item.entry.title, query: searchText)
-                            .font(.headline)
-                            .lineLimit(1)
-                        if !item.entry.username.isEmpty {
+                        HStack(spacing: 4) {
+                            if item.entry.isFavorite {
+                                Image(systemName: "star.fill")
+                                    .font(.caption2)
+                                    .foregroundStyle(.yellow)
+                            }
+                            highlightedText(item.entry.title, query: searchText)
+                                .font(.headline)
+                                .lineLimit(1)
+                        }
+                        if item.entry.entryType != "secure_note" && !item.entry.username.isEmpty {
                             highlightedText(item.entry.username, query: searchText)
                                 .font(.subheadline)
                                 .foregroundStyle(.secondary)
                                 .lineLimit(1)
                         }
-                        if !item.entry.url.isEmpty {
+                        if item.entry.entryType != "secure_note" && !item.entry.url.isEmpty {
                             highlightedText(item.entry.url, query: searchText)
                                 .font(.caption)
                                 .foregroundStyle(.tertiary)
@@ -93,6 +116,15 @@ struct EntryListView: View {
                     ContentUnavailableView.search(text: searchText)
                 }
             }
+        }
+    }
+
+    @ViewBuilder
+    private func entryIcon(_ entry: VaultEntrySummary) -> some View {
+        if entry.entryType == "secure_note" {
+            Image(systemName: "note.text")
+        } else {
+            Image(systemName: "key")
         }
     }
 

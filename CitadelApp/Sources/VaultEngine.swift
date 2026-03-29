@@ -161,7 +161,10 @@ public final class VaultEngine: @unchecked Sendable {
                 username: cString(item.username),
                 url: cString(item.url),
                 group: cString(item.group),
-                expiryDate: item.expiry_time > 0 ? Date(timeIntervalSince1970: TimeInterval(item.expiry_time)) : nil
+                entryType: cString(item.entry_type),
+                expiryDate: item.expiry_time > 0 ? Date(timeIntervalSince1970: TimeInterval(item.expiry_time)) : nil,
+                lastModified: item.last_modified > 0 ? Date(timeIntervalSince1970: TimeInterval(item.last_modified)) : nil,
+                isFavorite: item.is_favorite
             ))
         }
         return entries
@@ -190,6 +193,19 @@ public final class VaultEngine: @unchecked Sendable {
             passwordData = Data()
         }
 
+        // Parse custom fields
+        var customFields: [CustomField] = []
+        if let cfPtr = entry.custom_fields, entry.custom_field_count > 0 {
+            for i in 0..<Int(entry.custom_field_count) {
+                let cf = cfPtr.advanced(by: i).pointee
+                customFields.append(CustomField(
+                    key: cString(cf.key),
+                    value: cString(cf.value),
+                    isProtected: cf.is_protected
+                ))
+            }
+        }
+
         return VaultEntryDetail(
             uuid: cString(entry.uuid),
             title: cString(entry.title),
@@ -198,7 +214,11 @@ public final class VaultEngine: @unchecked Sendable {
             url: cString(entry.url),
             notes: cString(entry.notes),
             otpURI: cString(entry.otp_uri),
-            expiryDate: entry.expiry_time > 0 ? Date(timeIntervalSince1970: TimeInterval(entry.expiry_time)) : nil
+            entryType: cString(entry.entry_type),
+            customFields: customFields,
+            expiryDate: entry.expiry_time > 0 ? Date(timeIntervalSince1970: TimeInterval(entry.expiry_time)) : nil,
+            lastModified: entry.last_modified > 0 ? Date(timeIntervalSince1970: TimeInterval(entry.last_modified)) : nil,
+            isFavorite: entry.is_favorite
         )
     }
 
@@ -319,6 +339,47 @@ public final class VaultEngine: @unchecked Sendable {
         let result = vault_empty_recyclebin(h, &count)
         try check(result)
         return Int(count)
+    }
+
+    /// Set or clear the favorite flag on an entry.
+    public func setFavorite(uuid: String, favorite: Bool) throws {
+        lock.lock()
+        defer { lock.unlock() }
+        let h = try _requireHandle()
+        let result = uuid.withCString { cUuid in
+            vault_set_favorite(h, cUuid, favorite)
+        }
+        try check(result)
+    }
+
+    /// Set a custom field on an entry.
+    public func setCustomField(uuid: String, key: String, value: String, isProtected: Bool) throws {
+        try Self.validateFFIString(key, field: "key")
+        try Self.validateFFIString(value, field: "value")
+        lock.lock()
+        defer { lock.unlock() }
+        let h = try _requireHandle()
+        let result = uuid.withCString { cUuid in
+            key.withCString { cKey in
+                value.withCString { cValue in
+                    vault_set_custom_field(h, cUuid, cKey, cValue, isProtected)
+                }
+            }
+        }
+        try check(result)
+    }
+
+    /// Remove a custom field from an entry.
+    public func removeCustomField(uuid: String, key: String) throws {
+        lock.lock()
+        defer { lock.unlock() }
+        let h = try _requireHandle()
+        let result = uuid.withCString { cUuid in
+            key.withCString { cKey in
+                vault_remove_custom_field(h, cUuid, cKey)
+            }
+        }
+        try check(result)
     }
 
     /// List all group paths in the vault.
