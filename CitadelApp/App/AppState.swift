@@ -50,8 +50,8 @@ final class AppState {
     // MARK: - Init
 
     init() {
-        let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
-        let dir = docs.appendingPathComponent("Citadel")
+        let home = FileManager.default.homeDirectoryForCurrentUser
+        let dir = home.appendingPathComponent(".citadel")
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         vaultPath = dir.appendingPathComponent("vault.kdbx").path
 
@@ -73,6 +73,8 @@ final class AppState {
     }
 
     /// Check if the vault directory is inside a known cloud sync path.
+    /// The default ~/.citadel is safe, but detect if someone has moved or
+    /// symlinked it into a synced folder.
     private static func detectCloudSync(vaultDir: String) -> String? {
         let home = FileManager.default.homeDirectoryForCurrentUser.path
         let knownSyncPaths = [
@@ -80,35 +82,18 @@ final class AppState {
             home + "/Dropbox",
             home + "/Google Drive",
             home + "/OneDrive",
+            home + "/Documents",                   // may be synced via iCloud Desktop & Documents
         ]
 
+        // Resolve symlinks to detect if ~/.citadel points into a synced folder
+        let resolved = (vaultDir as NSString).resolvingSymlinksInPath
+
         for syncPath in knownSyncPaths {
-            if vaultDir.hasPrefix(syncPath) {
+            if resolved.hasPrefix(syncPath) {
                 return "Your vault is inside a cloud-synced folder (\(syncPath)). "
                     + "This means your vault file is uploaded to remote servers, and concurrent "
                     + "edits from other devices can cause silent data loss. Consider moving your "
-                    + "vault to a non-synced location."
-            }
-        }
-
-        // Check if ~/Documents is synced via iCloud "Desktop & Documents"
-        // by looking for the com.apple.bird extended attribute
-        let docsPath = home + "/Documents"
-        if vaultDir.hasPrefix(docsPath) {
-            let mobileDocs = home + "/Library/Mobile Documents/com~apple~CloudDocs/Documents"
-            let fm = FileManager.default
-            // If ~/Documents is a symlink into Mobile Documents, iCloud sync is active
-            if let resolved = try? fm.destinationOfSymbolicLink(atPath: docsPath),
-               resolved.contains("Mobile Documents") {
-                return "Your ~/Documents folder is synced to iCloud. Your vault file may be "
-                    + "uploaded to Apple servers. Consider disabling 'Desktop & Documents Folders' "
-                    + "in System Settings > iCloud > iCloud Drive, or move the vault elsewhere."
-            }
-            // Also check if the iCloud mirror of Documents exists
-            if fm.fileExists(atPath: mobileDocs) {
-                return "iCloud 'Desktop & Documents Folders' may be enabled. Your vault file "
-                    + "could be synced to Apple servers. Consider checking System Settings > "
-                    + "iCloud > iCloud Drive, or moving the vault to a non-synced location."
+                    + "vault to a non-synced location such as ~/.citadel/."
             }
         }
 
