@@ -30,7 +30,6 @@ public final class AutoLockManager {
 
     private var inactivityTimer: Timer?
     private var observers: [NSObjectProtocol] = []
-    private var eventMonitor: Any?
     private var localEventMonitor: Any?
 
     /// Create an auto-lock manager.
@@ -69,13 +68,8 @@ public final class AutoLockManager {
             }
         )
 
-        // Global event monitor for user activity in OTHER apps
+        // Local event monitor for user activity inside this app
         let mask: NSEvent.EventTypeMask = [.leftMouseDown, .rightMouseDown, .keyDown, .scrollWheel, .mouseMoved]
-        eventMonitor = NSEvent.addGlobalMonitorForEvents(matching: mask) { [weak self] _ in
-            Task { @MainActor in self?.recordActivity() }
-        }
-
-        // Local event monitor for user activity INSIDE this app
         localEventMonitor = NSEvent.addLocalMonitorForEvents(matching: mask) { [weak self] event in
             Task { @MainActor in self?.recordActivity() }
             return event
@@ -97,10 +91,6 @@ public final class AutoLockManager {
             nc.removeObserver(observer)
         }
         observers.removeAll()
-        if let monitor = eventMonitor {
-            NSEvent.removeMonitor(monitor)
-            eventMonitor = nil
-        }
         if let monitor = localEventMonitor {
             NSEvent.removeMonitor(monitor)
             localEventMonitor = nil

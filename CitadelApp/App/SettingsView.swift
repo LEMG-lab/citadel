@@ -304,7 +304,6 @@ struct SettingsView: View {
 
     @ViewBuilder
     private var emergencySection: some View {
-        let _ = print("DEBUG: [emergency-access] visible")
         settingsSection("Emergency Access") {
             settingsRow(icon: "exclamationmark.shield", iconColor: .citadelDanger) {
                 VStack(alignment: .leading, spacing: 8) {

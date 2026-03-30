@@ -1,6 +1,51 @@
 import AppKit
+import Carbon
 import SwiftUI
 import CitadelCore
+
+// MARK: - Carbon Hotkey Handler
+
+/// Singleton that bridges Carbon hotkey events to QuickAccessPanel.
+/// Carbon RegisterEventHotKey is the only reliable way to register a system-wide
+/// hotkey without addGlobalMonitorForEvents (which causes code signature issues).
+private final class HotkeyHandler: @unchecked Sendable {
+    static let shared = HotkeyHandler()
+    private var hotkeyRef: EventHotKeyRef?
+    var callback: (() -> Void)?
+
+    func register() {
+        // Already registered
+        guard hotkeyRef == nil else { return }
+
+        // Cmd+Shift+Space: keyCode 49 = Space
+        let hotkeyID = EventHotKeyID(signature: OSType(0x43544431) /* CTD1 */, id: 1)
+        let modifiers: UInt32 = UInt32(cmdKey | shiftKey)
+
+        // Install Carbon event handler
+        var eventType = EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyPressed))
+        InstallEventHandler(GetApplicationEventTarget(), { (_, event, _) -> OSStatus in
+            HotkeyHandler.shared.callback?()
+            return noErr
+        }, 1, &eventType, nil, nil)
+
+        let status = RegisterEventHotKey(49, modifiers, hotkeyID, GetApplicationEventTarget(), 0, &hotkeyRef)
+        if status != noErr {
+            print("QUICK ACCESS: Carbon hotkey registration failed: \(status)")
+        } else {
+            print("QUICK ACCESS: Carbon hotkey registered (Cmd+Shift+Space)")
+        }
+    }
+
+    func unregister() {
+        if let ref = hotkeyRef {
+            UnregisterEventHotKey(ref)
+            hotkeyRef = nil
+        }
+        callback = nil
+    }
+}
+
+// MARK: - Quick Access Panel
 
 /// Global quick-access search panel (Cmd+Shift+Space).
 /// Floating NSPanel that fuzzy-searches vault entries and copies credentials.
@@ -8,7 +53,7 @@ import CitadelCore
 final class QuickAccessPanel {
 
     private var panel: NSPanel?
-    private var monitor: Any?
+    private var localMonitor: Any?
     private weak var appState: AppState?
 
     init(appState: AppState) {
@@ -16,22 +61,18 @@ final class QuickAccessPanel {
     }
 
     func registerGlobalShortcut() {
-        print("QUICK ACCESS: hotkey registered")
-        // Monitor Cmd+Shift+Space globally
-        monitor = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { [weak self] event in
-            guard event.modifierFlags.contains([.command, .shift]),
-                  event.keyCode == 49 /* Space */ else { return }
-            print("QUICK ACCESS: triggered (global)")
+        // Carbon hotkey for system-wide Cmd+Shift+Space
+        HotkeyHandler.shared.callback = { [weak self] in
             Task { @MainActor in
                 self?.toggle()
             }
         }
+        HotkeyHandler.shared.register()
 
-        // Also monitor locally (when app is active)
-        NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+        // Local monitor for when app is active (catches the keyDown before Carbon)
+        localMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
             guard event.modifierFlags.contains([.command, .shift]),
                   event.keyCode == 49 else { return event }
-            print("QUICK ACCESS: triggered (local)")
             Task { @MainActor in
                 self?.toggle()
             }
@@ -77,14 +118,16 @@ final class QuickAccessPanel {
     }
 
     func close() {
-        panel?.close()
+        panel?.orderOut(nil)
         panel = nil
     }
 
     func tearDown() {
-        if let monitor {
+        if let monitor = localMonitor {
             NSEvent.removeMonitor(monitor)
+            localMonitor = nil
         }
+        HotkeyHandler.shared.unregister()
         close()
     }
 }
@@ -121,7 +164,7 @@ struct QuickAccessView: View {
             HStack(spacing: 10) {
                 Image(systemName: "magnifyingglass")
                     .font(.system(size: 16, weight: .medium))
-                    .foregroundStyle(Color.citadelSecondary)
+                    .foregroundStyle(.secondary)
 
                 TextField("Search vault entries\u{2026}", text: $query)
                     .textFieldStyle(.plain)
@@ -133,7 +176,7 @@ struct QuickAccessView: View {
                         query = ""
                     } label: {
                         Image(systemName: "xmark.circle.fill")
-                            .foregroundStyle(Color.citadelSecondary)
+                            .foregroundStyle(.secondary)
                     }
                     .buttonStyle(.plain)
                 }
@@ -158,13 +201,13 @@ struct QuickAccessView: View {
                 HStack(spacing: 16) {
                     Text("Enter: copy password")
                         .font(.system(size: 10))
-                        .foregroundStyle(Color.citadelSecondary)
+                        .foregroundStyle(.secondary)
                     Text("\u{2318}Enter: copy username")
                         .font(.system(size: 10))
-                        .foregroundStyle(Color.citadelSecondary)
+                        .foregroundStyle(.secondary)
                     Text("Esc: close")
                         .font(.system(size: 10))
-                        .foregroundStyle(Color.citadelSecondary)
+                        .foregroundStyle(.secondary)
                     Spacer()
                 }
                 .padding(.horizontal, 14)
@@ -188,12 +231,11 @@ struct QuickAccessView: View {
                 VStack(alignment: .leading, spacing: 1) {
                     Text(entry.title.isEmpty ? "(Untitled)" : entry.title)
                         .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(.primary)
                         .lineLimit(1)
                     if !entry.username.isEmpty {
                         Text(entry.username)
                             .font(.system(size: 11))
-                            .foregroundStyle(Color.citadelSecondary)
+                            .foregroundStyle(.secondary)
                             .lineLimit(1)
                     }
                 }
@@ -203,7 +245,7 @@ struct QuickAccessView: View {
                 if let host = URL(string: entry.url)?.host {
                     Text(host)
                         .font(.system(size: 11))
-                        .foregroundStyle(Color.citadelTertiary)
+                        .foregroundStyle(.tertiary)
                         .lineLimit(1)
                 }
             }

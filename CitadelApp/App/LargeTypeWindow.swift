@@ -6,16 +6,15 @@ import SwiftUI
 @MainActor
 final class LargeTypeWindow {
 
-    private var window: NSWindow?
+    private var panel: NSPanel?
     private var autoDismissTimer: Timer?
+    private var localMonitor: Any?
 
     func show(password: String) {
         close()
 
         let hostingView = NSHostingView(
-            rootView: LargeTypeView(password: password) { [weak self] in
-                self?.close()
-            }
+            rootView: LargeTypeView(password: password)
         )
 
         guard let screen = NSScreen.main else { return }
@@ -28,32 +27,33 @@ final class LargeTypeWindow {
             height: height
         )
 
-        let window = NSWindow(
+        let panel = NSPanel(
             contentRect: rect,
-            styleMask: [.borderless],
+            styleMask: [.borderless, .nonactivatingPanel],
             backing: .buffered,
             defer: false
         )
-        window.level = .floating
-        window.backgroundColor = .clear
-        window.isOpaque = false
-        window.hasShadow = true
-        window.contentView = hostingView
-        window.center()
-        window.makeKeyAndOrderFront(nil)
+        panel.level = .floating
+        panel.backgroundColor = .clear
+        panel.isOpaque = false
+        panel.hasShadow = true
+        panel.hidesOnDeactivate = false
+        panel.contentView = hostingView
+        panel.center()
+        panel.orderFrontRegardless()
 
-        self.window = window
+        self.panel = panel
 
         // Auto-dismiss after 30 seconds
         autoDismissTimer = Timer.scheduledTimer(withTimeInterval: 30, repeats: false) { [weak self] _ in
-            Task { @MainActor in
+            DispatchQueue.main.async { [weak self] in
                 self?.close()
             }
         }
 
-        // Key press listener
-        NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .leftMouseDown, .rightMouseDown]) { [weak self] event in
-            Task { @MainActor in
+        // Local monitor: key/click within app dismisses
+        localMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .leftMouseDown, .rightMouseDown]) { [weak self] event in
+            DispatchQueue.main.async { [weak self] in
                 self?.close()
             }
             return event
@@ -61,16 +61,23 @@ final class LargeTypeWindow {
     }
 
     func close() {
+        guard panel != nil else { return }
+
         autoDismissTimer?.invalidate()
         autoDismissTimer = nil
-        window?.close()
-        window = nil
+
+        if let monitor = localMonitor {
+            NSEvent.removeMonitor(monitor)
+            localMonitor = nil
+        }
+
+        panel?.orderOut(nil)
+        panel = nil
     }
 }
 
 struct LargeTypeView: View {
     let password: String
-    let onDismiss: () -> Void
 
     var body: some View {
         VStack(spacing: 16) {
@@ -90,6 +97,5 @@ struct LargeTypeView: View {
             RoundedRectangle(cornerRadius: 20, style: .continuous)
                 .fill(.black.opacity(0.9))
         )
-        .onTapGesture { onDismiss() }
     }
 }

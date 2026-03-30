@@ -9,6 +9,11 @@ enum SidebarItem: Hashable {
     case favorites
     case logins
     case secureNotes
+    case creditCards
+    case identities
+    case apiKeys
+    case servers
+    case cryptoWallets
     case folder(String)
     case tag(String)
     case trash
@@ -54,6 +59,16 @@ struct MainView: View {
             return appState.entries.filter { $0.entryType != "secure_note" }
         case .secureNotes:
             return appState.entries.filter { $0.entryType == "secure_note" }
+        case .creditCards:
+            return appState.entries.filter { $0.entryType == "credit_card" }
+        case .identities:
+            return appState.entries.filter { $0.entryType == "identity" }
+        case .apiKeys:
+            return appState.entries.filter { $0.entryType == "api_key" }
+        case .servers:
+            return appState.entries.filter { $0.entryType == "server_ssh" }
+        case .cryptoWallets:
+            return appState.entries.filter { $0.entryType == "crypto_wallet" }
         case .folder(let g):
             return appState.entries.filter { $0.group == g || $0.group.hasPrefix(g + "/") }
         case .tag(let t):
@@ -259,6 +274,11 @@ struct MainView: View {
                 sidebarRow("All Items", icon: "square.grid.2x2", color: .citadelAccent, item: .allItems, count: appState.entries.count)
                 sidebarRow("Logins", icon: "key.fill", color: .blue, item: .logins, count: appState.entries.filter { $0.entryType != "secure_note" }.count)
                 sidebarRow("Secure Notes", icon: "note.text", color: .purple, item: .secureNotes, count: appState.entries.filter { $0.entryType == "secure_note" }.count)
+                sidebarRow("Credit Cards", icon: "creditcard.fill", color: .green, item: .creditCards, count: appState.entries.filter { $0.entryType == "credit_card" }.count)
+                sidebarRow("Identities", icon: "person.text.rectangle.fill", color: .orange, item: .identities, count: appState.entries.filter { $0.entryType == "identity" }.count)
+                sidebarRow("API Keys", icon: "key.horizontal.fill", color: .red, item: .apiKeys, count: appState.entries.filter { $0.entryType == "api_key" }.count)
+                sidebarRow("Servers", icon: "server.rack", color: .cyan, item: .servers, count: appState.entries.filter { $0.entryType == "server_ssh" }.count)
+                sidebarRow("Crypto Wallets", icon: "bitcoinsign.circle.fill", color: .orange, item: .cryptoWallets, count: appState.entries.filter { $0.entryType == "crypto_wallet" }.count)
             }
 
             // Folders
@@ -311,11 +331,9 @@ struct MainView: View {
             HStack {
                 Text(title)
                 Spacer()
-                if count > 0 {
-                    Text("\(count)")
-                        .font(.system(size: 11))
-                        .foregroundStyle(Color.citadelSecondary)
-                }
+                Text("\(count)")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
             }
         } icon: {
             Image(systemName: icon)

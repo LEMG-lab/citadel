@@ -17,7 +17,6 @@ struct EntryDetailView: View {
     @State private var totpTimer: Timer?
     @State private var passwordHistory: [(password: String, date: Date)] = []
     @State private var showPasswordHistory = false
-    @State private var largeTypeWindow = LargeTypeWindow()
     @State private var attachments: [(name: String, size: Int)] = []
     @State private var showAttachments = false
     @State private var showingAttachmentPicker = false
@@ -90,7 +89,6 @@ struct EntryDetailView: View {
                 }
 
                 // ── Password History ──────────────────────────────
-                let _ = print("DEBUG: [password-history] isSecureNote=\(isSecureNote) count=\(passwordHistory.count)")
                 if !isSecureNote {
                     passwordHistorySection
                 }
@@ -145,7 +143,7 @@ struct EntryDetailView: View {
                 if !isSecureNote && !entry.username.isEmpty {
                     Text(entry.username)
                         .font(.system(size: 13))
-                        .foregroundStyle(Color.citadelSecondary)
+                        .foregroundStyle(.secondary)
                         .lineLimit(1)
                 }
             }
@@ -277,7 +275,7 @@ struct EntryDetailView: View {
                     )
 
                 Button {
-                    largeTypeWindow.show(password: String(decoding: entry.password, as: UTF8.self))
+                    appState.largeTypeWindow.show(password: String(decoding: entry.password, as: UTF8.self))
                 } label: {
                     Image(systemName: "textformat.size.larger")
                         .font(.system(size: 12))
@@ -443,7 +441,6 @@ struct EntryDetailView: View {
 
     @ViewBuilder
     private var passwordHistorySection: some View {
-        let _ = print("DEBUG: [password-history] visible — count=\(passwordHistory.count)")
         VStack(alignment: .leading, spacing: 8) {
             Button {
                 showPasswordHistory.toggle()
@@ -461,7 +458,7 @@ struct EntryDetailView: View {
                 if passwordHistory.isEmpty {
                     Text("No previous passwords recorded")
                         .font(.system(size: 12))
-                        .foregroundStyle(Color.citadelSecondary)
+                        .foregroundStyle(.secondary)
                         .padding(.leading, 16)
                 }
                 ForEach(Array(passwordHistory.enumerated()), id: \.offset) { _, item in
@@ -475,7 +472,7 @@ struct EntryDetailView: View {
 
                         Text(item.date.formatted(.dateTime.month(.abbreviated).day().year().hour().minute()))
                             .font(.system(size: 11))
-                            .foregroundStyle(Color.citadelSecondary)
+                            .foregroundStyle(.secondary)
 
                         copyButton {
                             appState.clipboard.copyPassword(Data(item.password.utf8))
@@ -494,7 +491,6 @@ struct EntryDetailView: View {
 
     @ViewBuilder
     private var attachmentsSection: some View {
-        let _ = print("DEBUG: [attachments] visible — count=\(attachments.count)")
         VStack(alignment: .leading, spacing: 8) {
             HStack {
                 Button {
@@ -541,7 +537,7 @@ struct EntryDetailView: View {
 
                         Text(formatBytes(att.size))
                             .font(.system(size: 11))
-                            .foregroundStyle(Color.citadelSecondary)
+                            .foregroundStyle(.secondary)
 
                         Button {
                             openAttachment(att.name)
@@ -608,7 +604,7 @@ struct EntryDetailView: View {
             if let modified = entry.lastModified {
                 Text("Last modified: \(modified.formatted(.relative(presentation: .named)))")
                     .font(.system(size: 11))
-                    .foregroundStyle(Color.citadelTertiary)
+                    .foregroundStyle(.tertiary)
             }
 
             HStack(spacing: 6) {
@@ -647,7 +643,6 @@ struct EntryDetailView: View {
             entry = try appState.engine.getEntry(uuid: entryID)
             passwordHistory = (try? appState.engine.getEntryHistory(uuid: entryID)) ?? []
             attachments = (try? appState.engine.listAttachments(uuid: entryID)) ?? []
-            print("DEBUG: [loadEntry] id=\(entryID) history=\(passwordHistory.count) attachments=\(attachments.count)")
             errorMessage = nil
         } catch {
             entry = nil
