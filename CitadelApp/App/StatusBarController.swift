@@ -273,10 +273,27 @@ final class StatusBarController: NSObject {
     }
 
     @objc private func openMainWindow() {
-        NSApplication.shared.activate(ignoringOtherApps: true)
-        // Bring the first window to front, or rely on the app delegate to show one
-        if let window = NSApplication.shared.windows.first(where: { $0.canBecomeMain }) {
+        let app = NSApplication.shared
+        app.activate(ignoringOtherApps: true)
+
+        // Find an existing content window (skip menu bar panels, popovers, etc.)
+        let contentWindow = app.windows.first(where: {
+            $0.canBecomeMain || $0.title == "Citadel"
+        })
+
+        if let window = contentWindow {
             window.makeKeyAndOrderFront(nil)
+            // If the window was miniaturized, deminiaturize it
+            if window.isMiniaturized {
+                window.deminiaturize(nil)
+            }
+        } else {
+            // No window exists — re-open the app which triggers WindowGroup creation
+            if let appURL = NSRunningApplication.current.bundleURL {
+                let config = NSWorkspace.OpenConfiguration()
+                config.activates = true
+                NSWorkspace.shared.openApplication(at: appURL, configuration: config)
+            }
         }
     }
 }

@@ -3,6 +3,7 @@ import SwiftUI
 /// Top-level view that switches between lock screen and main vault UI.
 struct ContentView: View {
     @Environment(AppState.self) private var appState
+    @Environment(\.appearanceMode) private var appearanceMode
     @State private var showCloudWarning = false
 
     var body: some View {
@@ -15,6 +16,7 @@ struct ContentView: View {
                     .transition(.opacity.combined(with: .scale(scale: 0.98)))
             }
         }
+        .frame(minWidth: 900, minHeight: 600)
         .animation(.easeInOut(duration: 0.25), value: appState.isLocked)
         .onAppear {
             if appState.cloudSyncWarning != nil {

@@ -2,29 +2,93 @@ import SwiftUI
 import UniformTypeIdentifiers
 import CitadelCore
 
-/// Main vault UI with sidebar entry list and detail pane.
+// MARK: - Sidebar Selection
+
+enum SidebarItem: Hashable {
+    case allItems
+    case favorites
+    case logins
+    case secureNotes
+    case folder(String)
+    case trash
+    case passwordGenerator
+    case passwordHealth
+    case breachCheck
+    case auditLog
+}
+
+// MARK: - Main View
+
+/// Main vault UI with three-column navigation: sidebar, entry list, and detail pane.
 struct MainView: View {
     @Environment(AppState.self) private var appState
 
+    // MARK: Sidebar state
+
+    @State private var sidebarSelection: SidebarItem? = .allItems
+
+    // MARK: Sheet state
+
     @State private var showingAddEntry = false
     @State private var showingSettings = false
+    @State private var showingReceiveShare = false
+    @State private var showingFullBackup = false
+    @State private var showingVerifyBackup = false
+    @State private var showingRestoreBackup = false
+    @State private var showingPasswordHealth = false
+    @State private var showingAuditLog = false
+    @State private var showingGenerator = false
+
+    // MARK: Alert state
+
     @State private var backupResultMessage: String?
     @State private var showingBackupResult = false
     @State private var importResultMessage: String?
     @State private var showingImportResult = false
     @State private var showingExpiredAlert = false
-    @State private var showingReceiveShare = false
-    @State private var showingFullBackup = false
-    @State private var showingVerifyBackup = false
-    @State private var showingRestoreBackup = false
+
+    // MARK: Backup
+
     @State private var backupPassword = ""
     @State private var backupMessage: String?
+
+    // MARK: - Filtered entries
+
+    var filteredEntries: [VaultEntrySummary] {
+        switch sidebarSelection {
+        case .allItems:
+            return appState.entries
+        case .favorites:
+            return appState.entries.filter(\.isFavorite)
+        case .logins:
+            return appState.entries.filter { $0.entryType != "secure_note" }
+        case .secureNotes:
+            return appState.entries.filter { $0.entryType == "secure_note" }
+        case .folder(let g):
+            return appState.entries.filter { $0.group == g || $0.group.hasPrefix(g + "/") }
+        default:
+            return appState.entries
+        }
+    }
+
+    // MARK: - Body
 
     var body: some View {
         @Bindable var appState = appState
         NavigationSplitView {
-            EntryListView()
-                .navigationSplitViewColumnWidth(min: 220, ideal: 260, max: 360)
+            SidebarView(
+                selection: $sidebarSelection,
+                showingPasswordHealth: $showingPasswordHealth,
+                showingAuditLog: $showingAuditLog,
+                showingGenerator: $showingGenerator
+            )
+            .navigationSplitViewColumnWidth(min: 180, ideal: 220, max: 280)
+        } content: {
+            EntryListView(
+                entries: filteredEntries,
+                selectedEntryID: $appState.selectedEntryID
+            )
+            .navigationSplitViewColumnWidth(min: 240, ideal: 300, max: 420)
         } detail: {
             if let id = appState.selectedEntryID {
                 EntryDetailView(entryID: id)
@@ -96,15 +160,8 @@ struct MainView: View {
                 }
                 .help("Settings")
             }
-            ToolbarItem(placement: .automatic) {
-                Button {
-                    appState.lockVault()
-                } label: {
-                    Image(systemName: "lock")
-                }
-                .help("Lock vault")
-            }
         }
+        // MARK: Sheets
         .sheet(isPresented: $showingAddEntry) {
             EntryEditView(mode: .add)
         }
@@ -117,6 +174,13 @@ struct MainView: View {
         .sheet(isPresented: $showingFullBackup) {
             FullBackupSheet()
         }
+        .sheet(isPresented: $showingPasswordHealth) {
+            PasswordHealthView()
+        }
+        .sheet(isPresented: $showingAuditLog) {
+            AuditLogView()
+        }
+        // MARK: Alerts
         .alert("Backup", isPresented: $showingBackupResult) {
             Button("OK") {}
         } message: {
@@ -141,6 +205,7 @@ struct MainView: View {
         .onChange(of: appState.expiredEntriesMessage) { _, newValue in
             if newValue != nil { showingExpiredAlert = true }
         }
+        // MARK: Notification listeners
         .onReceive(NotificationCenter.default.publisher(for: .citadelNewEntry)) { _ in
             showingAddEntry = true
         }
@@ -154,6 +219,8 @@ struct MainView: View {
             copySelectedUsername()
         }
     }
+
+    // MARK: - Actions
 
     private func copySelectedPassword() {
         guard let id = appState.selectedEntryID,
@@ -290,6 +357,163 @@ struct MainView: View {
     }
 }
 
+// MARK: - Sidebar View
+
+struct SidebarView: View {
+    @Environment(AppState.self) private var appState
+    @Binding var selection: SidebarItem?
+    @Binding var showingPasswordHealth: Bool
+    @Binding var showingAuditLog: Bool
+    @Binding var showingGenerator: Bool
+
+    @State private var categoriesExpanded = true
+    @State private var foldersExpanded = true
+    @State private var toolsExpanded = true
+
+    private var folders: [String] {
+        let groups = Set(appState.entries.map(\.group)).filter { !$0.isEmpty }
+        return groups.sorted()
+    }
+
+    private var favoritesCount: Int {
+        appState.entries.filter(\.isFavorite).count
+    }
+
+    private var loginsCount: Int {
+        appState.entries.filter { $0.entryType != "secure_note" }.count
+    }
+
+    private var secureNotesCount: Int {
+        appState.entries.filter { $0.entryType == "secure_note" }.count
+    }
+
+    private func folderCount(_ folder: String) -> Int {
+        appState.entries.filter { $0.group == folder || $0.group.hasPrefix(folder + "/") }.count
+    }
+
+    var body: some View {
+        List(selection: $selection) {
+            // Header area
+            VStack(alignment: .leading, spacing: 4) {
+                HStack {
+                    Image(systemName: "lock.shield.fill")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(Color.citadelAccent)
+                    Text(appState.activeVaultName)
+                        .font(.system(size: 13, weight: .semibold))
+                        .lineLimit(1)
+                    Spacer()
+                    Button {
+                        appState.lockVault()
+                    } label: {
+                        Image(systemName: "lock")
+                            .font(.system(size: 12))
+                            .foregroundStyle(Color.citadelSecondary)
+                    }
+                    .buttonStyle(.plain)
+                    .help("Lock vault")
+                }
+            }
+            .listRowSeparator(.hidden)
+            .padding(.bottom, 4)
+
+            // Favorites
+            Label("Favorites", systemImage: "star.fill")
+                .tag(SidebarItem.favorites)
+                .badge(favoritesCount)
+
+            // Categories section
+            Section {
+                DisclosureGroup(isExpanded: $categoriesExpanded) {
+                    Label("All Items", systemImage: "square.grid.2x2")
+                        .tag(SidebarItem.allItems)
+                        .badge(appState.entries.count)
+
+                    Label("Logins", systemImage: "key.fill")
+                        .tag(SidebarItem.logins)
+                        .badge(loginsCount)
+
+                    Label("Secure Notes", systemImage: "note.text")
+                        .tag(SidebarItem.secureNotes)
+                        .badge(secureNotesCount)
+                } label: {
+                    Text("Categories")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(Color.citadelSecondary)
+                }
+            }
+
+            // Folders section
+            if !folders.isEmpty {
+                Section {
+                    DisclosureGroup(isExpanded: $foldersExpanded) {
+                        ForEach(folders, id: \.self) { folder in
+                            Label(folderDisplayName(folder), systemImage: "folder")
+                                .tag(SidebarItem.folder(folder))
+                                .badge(folderCount(folder))
+                        }
+                    } label: {
+                        Text("Folders")
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(Color.citadelSecondary)
+                    }
+                }
+            }
+
+            // Tools section
+            Section {
+                DisclosureGroup(isExpanded: $toolsExpanded) {
+                    Button {
+                        showingGenerator = true
+                    } label: {
+                        Label("Password Generator", systemImage: "wand.and.stars")
+                    }
+                    .buttonStyle(.plain)
+
+                    Button {
+                        showingPasswordHealth = true
+                    } label: {
+                        Label("Password Health", systemImage: "heart.text.square")
+                    }
+                    .buttonStyle(.plain)
+
+                    Button {
+                        showingPasswordHealth = true
+                    } label: {
+                        Label("Breach Check", systemImage: "shield.slash")
+                    }
+                    .buttonStyle(.plain)
+
+                    Button {
+                        showingAuditLog = true
+                    } label: {
+                        Label("Audit Log", systemImage: "list.bullet.clipboard")
+                    }
+                    .buttonStyle(.plain)
+                } label: {
+                    Text("Tools")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(Color.citadelSecondary)
+                }
+            }
+
+            // Trash
+            Label("Trash", systemImage: "trash")
+                .tag(SidebarItem.trash)
+        }
+        .listStyle(.sidebar)
+    }
+
+    private func folderDisplayName(_ path: String) -> String {
+        if let last = path.split(separator: "/").last {
+            return String(last)
+        }
+        return path
+    }
+}
+
+// MARK: - Full Backup Sheet
+
 /// Sheet for creating an encrypted full backup.
 struct FullBackupSheet: View {
     @Environment(AppState.self) private var appState
@@ -359,7 +583,7 @@ struct FullBackupSheet: View {
             .padding(.horizontal, 20)
             .padding(.vertical, 12)
         }
-        .frame(width: 440, height: 380)
+        .frame(minWidth: 400, minHeight: 340)
     }
 
     private func createBackup() {

@@ -2,10 +2,12 @@ import SwiftUI
 import UniformTypeIdentifiers
 import CitadelCore
 
-/// Application settings sheet.
+/// Application settings sheet — iOS Settings-style layout with icon badges,
+/// grouped sections, and adaptive appearance controls.
 struct SettingsView: View {
     @Environment(AppState.self) private var appState
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.appearanceMode) private var appearanceMode
 
     @State private var showingPasswordChange = false
     @State private var showingRecoverySheet = false
@@ -23,6 +25,7 @@ struct SettingsView: View {
     var body: some View {
         @Bindable var appState = appState
         VStack(spacing: 0) {
+            // Title bar
             HStack {
                 Text("Settings")
                     .font(.system(size: 15, weight: .semibold))
@@ -40,6 +43,7 @@ struct SettingsView: View {
 
             Divider()
 
+            // Footer
             HStack {
                 Spacer()
                 Button("Done") { dismiss() }
@@ -50,7 +54,7 @@ struct SettingsView: View {
             .padding(.horizontal, 20)
             .padding(.vertical, 12)
         }
-        .frame(width: 520, height: 660)
+        .frame(minWidth: 500, minHeight: 500)
         .sheet(isPresented: $showingPasswordChange) { ChangePasswordView() }
         .sheet(isPresented: $showingRecoverySheet) { RecoverySheetView() }
         .sheet(isPresented: $showingAuditLog) { AuditLogView() }
@@ -73,9 +77,12 @@ struct SettingsView: View {
         }
     }
 
+    // MARK: - All Sections
+
     @ViewBuilder
     private func settingsAllSections(appState: Bindable<AppState>) -> some View {
         VStack(alignment: .leading, spacing: 20) {
+            appearanceSection
             securitySection(appState: appState)
             vaultSection
             recycleBinSection
@@ -84,6 +91,33 @@ struct SettingsView: View {
         }
         .padding(20)
     }
+
+    // MARK: - Appearance
+
+    @ViewBuilder
+    private var appearanceSection: some View {
+        settingsSection("Appearance") {
+            settingsRow(icon: "paintbrush", iconColor: .purple) {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Theme").font(.system(size: 13))
+                    Picker("", selection: Binding(
+                        get: { appearanceMode.wrappedValue },
+                        set: { newValue in
+                            appearanceMode.wrappedValue = newValue
+                            newValue.save()
+                        }
+                    )) {
+                        ForEach(AppearanceMode.allCases) { mode in
+                            Text(mode.label).tag(mode)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                }
+            }
+        }
+    }
+
+    // MARK: - Security
 
     @ViewBuilder
     private func securitySection(appState: Bindable<AppState>) -> some View {
@@ -148,6 +182,8 @@ struct SettingsView: View {
         }
     }
 
+    // MARK: - Vault
+
     @ViewBuilder
     private var vaultSection: some View {
         settingsSection("Vault") {
@@ -183,6 +219,8 @@ struct SettingsView: View {
         }
     }
 
+    // MARK: - Recycle Bin
+
     @ViewBuilder
     private var recycleBinSection: some View {
         settingsSection("Recycle Bin") {
@@ -200,6 +238,8 @@ struct SettingsView: View {
             }
         }
     }
+
+    // MARK: - Data
 
     @ViewBuilder
     private var dataSection: some View {
@@ -225,6 +265,8 @@ struct SettingsView: View {
             }
         }
     }
+
+    // MARK: - Recovery & Audit
 
     @ViewBuilder
     private var auditSection: some View {

@@ -58,60 +58,40 @@ struct EntryEditView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            HStack {
-                Text(isEditing ? "Edit Entry" : "New Entry")
-                    .font(.system(size: 15, weight: .semibold))
-                Spacer()
-            }
-            .padding(.horizontal, 20)
-            .padding(.top, 16)
-            .padding(.bottom, 8)
+            // ── Title bar ───────────────────────────────────
+            sheetHeader
 
             Divider()
 
+            // ── Scrollable form ─────────────────────────────
             ScrollView {
-                VStack(alignment: .leading, spacing: 16) {
-                    // Template picker (new entries only)
+                VStack(alignment: .leading, spacing: 24) {
                     if !isEditing {
                         templatePicker
                     }
 
                     coreFieldsSection
-                    if !isEditing { folderSection }
+
+                    if !isEditing {
+                        folderSection
+                    }
+
                     expirationSection
                     customFieldsSection
 
                     if let msg = errorMessage {
-                        HStack(spacing: 4) {
-                            Image(systemName: "exclamationmark.circle.fill")
-                                .font(.system(size: 12))
-                            Text(msg).font(.system(size: 12))
-                        }
-                        .foregroundStyle(Color.citadelDanger)
+                        errorBanner(msg)
                     }
                 }
-                .padding(20)
+                .padding(24)
             }
 
             Divider()
 
-            HStack {
-                Spacer()
-                Button("Cancel") { dismiss() }
-                    .keyboardShortcut(.cancelAction)
-                Button(action: save) {
-                    Text("Save")
-                        .font(.system(size: 13, weight: .semibold))
-                }
-                .buttonStyle(.borderedProminent)
-                .tint(.citadelAccent)
-                .keyboardShortcut(.defaultAction)
-                .disabled(title.isEmpty)
-            }
-            .padding(.horizontal, 20)
-            .padding(.vertical, 12)
+            // ── Footer buttons ──────────────────────────────
+            sheetFooter
         }
-        .frame(minWidth: 460, minHeight: 440)
+        .frame(minWidth: 480, minHeight: 480)
         .onAppear { populateFields() }
         .sheet(isPresented: $showingGenerator) {
             PasswordGeneratorView { generated in
@@ -121,39 +101,96 @@ struct EntryEditView: View {
         }
     }
 
+    // MARK: - Sheet Header
+
+    @ViewBuilder
+    private var sheetHeader: some View {
+        HStack {
+            Text(isEditing ? "Edit Entry" : "New Entry")
+                .font(.system(size: 16, weight: .semibold))
+            Spacer()
+            Button {
+                dismiss()
+            } label: {
+                Image(systemName: "xmark.circle.fill")
+                    .font(.system(size: 18))
+                    .foregroundStyle(Color.citadelTertiary)
+            }
+            .buttonStyle(.plain)
+            .help("Cancel")
+        }
+        .padding(.horizontal, 24)
+        .padding(.top, 18)
+        .padding(.bottom, 12)
+    }
+
+    // MARK: - Sheet Footer
+
+    @ViewBuilder
+    private var sheetFooter: some View {
+        HStack(spacing: 12) {
+            Spacer()
+
+            Button("Cancel") { dismiss() }
+                .keyboardShortcut(.cancelAction)
+
+            Button(action: save) {
+                Text("Save")
+                    .font(.system(size: 13, weight: .semibold))
+                    .padding(.horizontal, 8)
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(.citadelAccent)
+            .keyboardShortcut(.defaultAction)
+            .disabled(title.isEmpty)
+        }
+        .padding(.horizontal, 24)
+        .padding(.vertical, 14)
+    }
+
     // MARK: - Template Picker
 
     @ViewBuilder
     private var templatePicker: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: 8) {
             SectionHeader(title: "Template")
+
             ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 8) {
+                HStack(spacing: 10) {
                     ForEach(EntryTemplate.allCases) { template in
                         Button {
                             applyTemplate(template)
                         } label: {
-                            VStack(spacing: 4) {
+                            VStack(spacing: 6) {
                                 Image(systemName: template.icon)
-                                    .font(.system(size: 16))
-                                    .frame(width: 32, height: 32)
+                                    .font(.system(size: 18))
+                                    .frame(width: 38, height: 38)
                                     .background(
                                         selectedTemplate == template
                                             ? Color.citadelAccent.opacity(0.15)
-                                            : Color.clear,
-                                        in: RoundedRectangle(cornerRadius: 6, style: .continuous)
+                                            : Color.citadelSecondary.opacity(0.06),
+                                        in: RoundedRectangle(cornerRadius: 8, style: .continuous)
                                     )
+                                    .overlay(
+                                        RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                            .stroke(
+                                                selectedTemplate == template ? Color.citadelAccent.opacity(0.4) : .clear,
+                                                lineWidth: 1.5
+                                            )
+                                    )
+
                                 Text(template.displayName)
-                                    .font(.system(size: 10))
+                                    .font(.system(size: 10, weight: .medium))
                                     .lineLimit(1)
                             }
-                            .frame(width: 72)
+                            .frame(width: 74)
                             .foregroundStyle(selectedTemplate == template ? Color.citadelAccent : .primary)
                         }
                         .buttonStyle(.plain)
                     }
                 }
                 .padding(.vertical, 4)
+                .padding(.horizontal, 2)
             }
         }
     }
@@ -162,16 +199,22 @@ struct EntryEditView: View {
 
     @ViewBuilder
     private var coreFieldsSection: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 12) {
             SectionHeader(title: "Details")
 
-            styledField("Title", text: $title)
+            styledField("Title", text: $title, icon: "character.cursor.ibeam")
 
             if !isSecureNote {
-                styledField("Username", text: $username)
+                styledField("Username", text: $username, icon: "person")
 
-                VStack(alignment: .leading, spacing: 4) {
-                    HStack(spacing: 6) {
+                // Password field with strength bar
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack(spacing: 8) {
+                        Image(systemName: "lock")
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundStyle(Color.citadelSecondary)
+                            .frame(width: 16)
+
                         if showPassword {
                             TextField(text: $password, prompt: Text("Password").foregroundStyle(.tertiary)) {}
                                 .font(.system(size: 13, design: .monospaced))
@@ -194,37 +237,49 @@ struct EntryEditView: View {
                             showingGenerator = true
                         } label: {
                             Image(systemName: "wand.and.stars")
-                                .font(.system(size: 12))
+                                .font(.system(size: 13))
                                 .foregroundStyle(Color.citadelAccent)
                         }
                         .buttonStyle(.plain)
                         .help("Generate password")
                     }
                     .textFieldStyle(.plain)
-                    .padding(8)
-                    .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+                    .padding(10)
+                    .background(Color.cardBackground.opacity(0.6), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                    .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).stroke(Color.subtleSeparator.opacity(0.3), lineWidth: 0.5))
 
                     PasswordStrengthBar(password: password)
+                        .padding(.horizontal, 2)
                 }
 
-                styledField("URL", text: $url)
+                styledField("URL", text: $url, icon: "link")
             }
 
+            // Notes / secure note content
             VStack(alignment: .leading, spacing: 4) {
-                TextField(
-                    text: $notes,
-                    prompt: Text(isSecureNote ? "Content" : "Notes").foregroundStyle(.tertiary),
-                    axis: .vertical
-                ) {}
-                .textFieldStyle(.plain)
-                .font(.system(size: 13))
-                .lineLimit(3...8)
-                .padding(8)
-                .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+                HStack(alignment: .top, spacing: 8) {
+                    Image(systemName: isSecureNote ? "note.text" : "text.alignleft")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(Color.citadelSecondary)
+                        .frame(width: 16)
+                        .padding(.top, 4)
+
+                    TextField(
+                        text: $notes,
+                        prompt: Text(isSecureNote ? "Content" : "Notes").foregroundStyle(.tertiary),
+                        axis: .vertical
+                    ) {}
+                    .textFieldStyle(.plain)
+                    .font(.system(size: 13))
+                    .lineLimit(3...10)
+                }
+                .padding(10)
+                .background(Color.cardBackground.opacity(0.6), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).stroke(Color.subtleSeparator.opacity(0.3), lineWidth: 0.5))
             }
 
             if !isSecureNote {
-                styledField("TOTP URI (otpauth://...)", text: $otpURI, monospaced: true)
+                styledField("TOTP URI (otpauth://...)", text: $otpURI, icon: "timer", monospaced: true)
             }
         }
     }
@@ -233,8 +288,9 @@ struct EntryEditView: View {
 
     @ViewBuilder
     private var folderSection: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: 8) {
             SectionHeader(title: "Folder")
+
             Picker("Folder", selection: $group) {
                 Text("Root (default)").tag("")
                 ForEach(existingGroups, id: \.self) { g in
@@ -243,8 +299,9 @@ struct EntryEditView: View {
                 Text("New folder\u{2026}").tag("__new__")
             }
             .labelsHidden()
+
             if group == "__new__" {
-                styledField("Folder path (e.g. Work/Email)", text: $newGroupName)
+                styledField("Folder path (e.g. Work/Email)", text: $newGroupName, icon: "folder")
             }
         }
     }
@@ -253,13 +310,23 @@ struct EntryEditView: View {
 
     @ViewBuilder
     private var expirationSection: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: 8) {
             SectionHeader(title: "Expiration")
-            Toggle("Set expiry date", isOn: $hasExpiry)
-                .font(.system(size: 13))
+
+            Toggle(isOn: $hasExpiry) {
+                HStack(spacing: 6) {
+                    Image(systemName: "calendar.badge.clock")
+                        .font(.system(size: 12))
+                        .foregroundStyle(Color.citadelSecondary)
+                    Text("Set expiry date")
+                        .font(.system(size: 13))
+                }
+            }
+
             if hasExpiry {
                 DatePicker("Expires", selection: $expiryDate, displayedComponents: .date)
                     .font(.system(size: 13))
+                    .padding(.leading, 18)
             }
         }
     }
@@ -268,30 +335,33 @@ struct EntryEditView: View {
 
     @ViewBuilder
     private var customFieldsSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 10) {
             SectionHeader(title: "Custom Fields")
 
             ForEach($customFields) { $field in
-                HStack(spacing: 6) {
+                HStack(spacing: 8) {
                     TextField(text: $field.key, prompt: Text("Name").foregroundStyle(.tertiary)) {}
                         .textFieldStyle(.plain)
                         .font(.system(size: 13))
-                        .frame(maxWidth: 120)
-                        .padding(6)
-                        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 5, style: .continuous))
+                        .frame(maxWidth: 130)
+                        .padding(8)
+                        .background(Color.cardBackground.opacity(0.6), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+                        .overlay(RoundedRectangle(cornerRadius: 7, style: .continuous).stroke(Color.subtleSeparator.opacity(0.3), lineWidth: 0.5))
 
                     TextField(text: $field.value, prompt: Text("Value").foregroundStyle(.tertiary)) {}
                         .textFieldStyle(.plain)
                         .font(.system(size: 13))
-                        .padding(6)
-                        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 5, style: .continuous))
+                        .padding(8)
+                        .background(Color.cardBackground.opacity(0.6), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+                        .overlay(RoundedRectangle(cornerRadius: 7, style: .continuous).stroke(Color.subtleSeparator.opacity(0.3), lineWidth: 0.5))
 
                     Button {
                         field.isProtected.toggle()
                     } label: {
                         Image(systemName: field.isProtected ? "lock.fill" : "lock.open")
-                            .font(.system(size: 11))
+                            .font(.system(size: 12))
                             .foregroundStyle(field.isProtected ? Color.citadelAccent : Color.citadelSecondary)
+                            .frame(width: 24, height: 24)
                     }
                     .buttonStyle(.plain)
                     .help(field.isProtected ? "Protected" : "Not protected")
@@ -300,37 +370,66 @@ struct EntryEditView: View {
                         customFields.removeAll { $0.id == field.id }
                     } label: {
                         Image(systemName: "minus.circle.fill")
-                            .font(.system(size: 14))
+                            .font(.system(size: 15))
                             .foregroundStyle(Color.citadelDanger.opacity(0.7))
                     }
                     .buttonStyle(.plain)
+                    .help("Remove field")
                 }
             }
 
             Button {
                 customFields.append(EditableCustomField(key: "", value: "", isProtected: false))
             } label: {
-                HStack(spacing: 4) {
+                HStack(spacing: 5) {
                     Image(systemName: "plus.circle.fill")
-                        .font(.system(size: 13))
+                        .font(.system(size: 14))
                     Text("Add Field")
                         .font(.system(size: 12, weight: .medium))
                 }
                 .foregroundStyle(Color.citadelAccent)
+                .padding(.vertical, 4)
             }
             .buttonStyle(.plain)
         }
     }
 
+    // MARK: - Error Banner
+
+    @ViewBuilder
+    private func errorBanner(_ message: String) -> some View {
+        HStack(spacing: 6) {
+            Image(systemName: "exclamationmark.circle.fill")
+                .font(.system(size: 13))
+            Text(message)
+                .font(.system(size: 12, weight: .medium))
+        }
+        .foregroundStyle(.white)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.citadelDanger.opacity(0.85), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+    }
+
     // MARK: - Styled Field
 
     @ViewBuilder
-    private func styledField(_ placeholder: String, text: Binding<String>, monospaced: Bool = false) -> some View {
-        TextField(text: text, prompt: Text(placeholder).foregroundStyle(.tertiary)) {}
-            .textFieldStyle(.plain)
-            .font(.system(size: 13, design: monospaced ? .monospaced : .default))
-            .padding(8)
-            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+    private func styledField(_ placeholder: String, text: Binding<String>, icon: String? = nil, monospaced: Bool = false) -> some View {
+        HStack(spacing: 8) {
+            if let icon {
+                Image(systemName: icon)
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(Color.citadelSecondary)
+                    .frame(width: 16)
+            }
+
+            TextField(text: text, prompt: Text(placeholder).foregroundStyle(.tertiary)) {}
+                .textFieldStyle(.plain)
+                .font(.system(size: 13, design: monospaced ? .monospaced : .default))
+        }
+        .padding(10)
+        .background(Color.cardBackground.opacity(0.6), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).stroke(Color.subtleSeparator.opacity(0.3), lineWidth: 0.5))
     }
 
     // MARK: - Template

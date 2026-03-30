@@ -20,11 +20,13 @@ struct LockScreenView: View {
         case confirm
     }
 
+    // MARK: - Body
+
     var body: some View {
         ZStack {
             // Subtle gradient background
             LinearGradient(
-                colors: [Color.citadelAccent.opacity(0.05), .clear],
+                colors: [Color.citadelAccent.opacity(0.04), .clear],
                 startPoint: .topLeading,
                 endPoint: .bottomTrailing
             )
@@ -35,17 +37,27 @@ struct LockScreenView: View {
 
                 // Shield icon
                 Image(systemName: "shield.lock.fill")
-                    .font(.system(size: 56, weight: .light))
+                    .font(.system(size: 60, weight: .light))
                     .foregroundStyle(Color.citadelAccent)
-                    .padding(.bottom, 12)
+                    .padding(.bottom, 14)
 
+                // App name
                 Text("Citadel")
-                    .font(.system(size: 28, weight: .bold, design: .rounded))
+                    .font(.system(size: 28, weight: .semibold, design: .rounded))
 
+                // Vault name
+                if let vault = appState.knownVaults.first(where: { $0.path == appState.vaultPath }) {
+                    Text(vault.name)
+                        .font(.system(size: 14))
+                        .foregroundStyle(.secondary)
+                        .padding(.top, 2)
+                }
+
+                // Subtitle
                 Text(isCreating ? "Create a new vault" : "Enter your master password")
                     .font(.system(size: 13))
                     .foregroundStyle(Color.citadelSecondary)
-                    .padding(.top, 2)
+                    .padding(.top, 4)
                     .padding(.bottom, 28)
 
                 // Vault picker
@@ -65,8 +77,8 @@ struct LockScreenView: View {
                         }
                     }
                     .labelsHidden()
-                    .frame(width: 200)
-                    .padding(.bottom, 4)
+                    .frame(width: 220)
+                    .padding(.bottom, 8)
                 }
 
                 // Form content
@@ -77,14 +89,15 @@ struct LockScreenView: View {
                         unlockFields
                     }
                 }
-                .frame(width: 280)
+                .frame(width: 340)
 
                 Spacer()
 
-                Text("v1.3")
+                // Version
+                Text("v1.4")
                     .font(.system(size: 11))
-                    .foregroundStyle(Color.citadelSecondary.opacity(0.5))
-                    .padding(.bottom, 16)
+                    .foregroundStyle(Color.citadelTertiary)
+                    .padding(.bottom, 20)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -106,11 +119,12 @@ struct LockScreenView: View {
     private var unlockFields: some View {
         SecureField(text: $password, prompt: Text("Master Password")) {}
             .textFieldStyle(.plain)
-            .font(.system(size: 14))
-            .padding(10)
-            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .font(.system(size: 15))
+            .padding(.horizontal, 14)
+            .frame(height: 44)
+            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
             .overlay(
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
                     .stroke(Color.citadelAccent.opacity(focusedField == .password ? 0.6 : 0), lineWidth: 1.5)
             )
             .focused($focusedField, equals: .password)
@@ -127,7 +141,7 @@ struct LockScreenView: View {
         }
 
         if let msg = errorMessage {
-            HStack(spacing: 4) {
+            HStack(spacing: 5) {
                 Image(systemName: "exclamationmark.circle.fill")
                     .font(.system(size: 12))
                 Text(msg)
@@ -140,13 +154,13 @@ struct LockScreenView: View {
             Text("Unlock")
                 .font(.system(size: 14, weight: .semibold))
                 .frame(maxWidth: .infinity)
-                .padding(.vertical, 8)
+                .frame(height: 40)
         }
         .buttonStyle(.borderedProminent)
         .tint(.citadelAccent)
         .keyboardShortcut(.defaultAction)
         .disabled(password.isEmpty || appState.isLoading)
-        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
 
         if appState.biometricEnrolled && appState.vaultExists {
             Button(action: unlockWithBiometrics) {
@@ -199,11 +213,12 @@ struct LockScreenView: View {
     private var createFields: some View {
         SecureField(text: $password, prompt: Text("Master Password")) {}
             .textFieldStyle(.plain)
-            .font(.system(size: 14))
-            .padding(10)
-            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .font(.system(size: 15))
+            .padding(.horizontal, 14)
+            .frame(height: 44)
+            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
             .overlay(
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
                     .stroke(Color.citadelAccent.opacity(focusedField == .password ? 0.6 : 0), lineWidth: 1.5)
             )
             .focused($focusedField, equals: .password)
@@ -211,11 +226,12 @@ struct LockScreenView: View {
 
         SecureField(text: $confirmPassword, prompt: Text("Confirm Password")) {}
             .textFieldStyle(.plain)
-            .font(.system(size: 14))
-            .padding(10)
-            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .font(.system(size: 15))
+            .padding(.horizontal, 14)
+            .frame(height: 44)
+            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
             .overlay(
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
                     .stroke(Color.citadelAccent.opacity(focusedField == .confirm ? 0.6 : 0), lineWidth: 1.5)
             )
             .focused($focusedField, equals: .confirm)
@@ -224,7 +240,7 @@ struct LockScreenView: View {
         keyfileRow
 
         if let msg = errorMessage {
-            HStack(spacing: 4) {
+            HStack(spacing: 5) {
                 Image(systemName: "exclamationmark.circle.fill")
                     .font(.system(size: 12))
                 Text(msg).font(.system(size: 12))
@@ -232,7 +248,7 @@ struct LockScreenView: View {
             .foregroundStyle(Color.citadelDanger)
         }
 
-        HStack(spacing: 10) {
+        HStack(spacing: 12) {
             Button("Cancel") {
                 isCreating = false
                 password = ""
@@ -248,13 +264,13 @@ struct LockScreenView: View {
                 Text("Create Vault")
                     .font(.system(size: 14, weight: .semibold))
                     .frame(maxWidth: .infinity)
-                    .padding(.vertical, 8)
+                    .frame(height: 40)
             }
             .buttonStyle(.borderedProminent)
             .tint(.citadelAccent)
             .keyboardShortcut(.defaultAction)
             .disabled(password.isEmpty || confirmPassword.isEmpty || appState.isLoading)
-            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
         }
     }
 

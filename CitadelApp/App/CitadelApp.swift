@@ -23,11 +23,25 @@ extension Notification.Name {
     static let citadelCopyUsername = Notification.Name("citadelCopyUsername")
 }
 
+// MARK: - Appearance environment key
+
+struct AppearanceModeKey: EnvironmentKey {
+    static let defaultValue: Binding<AppearanceMode> = .constant(.system)
+}
+
+extension EnvironmentValues {
+    var appearanceMode: Binding<AppearanceMode> {
+        get { self[AppearanceModeKey.self] }
+        set { self[AppearanceModeKey.self] = newValue }
+    }
+}
+
 // MARK: - App
 
 @main
 struct CitadelApplication: App {
     @State private var appState = AppState()
+    @State private var appearanceMode: AppearanceMode = .saved
     @FocusedValue(\.appState) private var focusedAppState
 
     init() {
@@ -39,11 +53,14 @@ struct CitadelApplication: App {
         WindowGroup("Citadel") {
             ContentView()
                 .environment(appState)
+                .environment(\.appearanceMode, $appearanceMode)
                 .focusedValue(\.appState, appState)
                 .tint(.citadelAccent)
+                .preferredColorScheme(appearanceMode.colorScheme)
                 .background(WindowConfigurator())
         }
-        .defaultSize(width: 800, height: 600)
+        .defaultSize(width: 1100, height: 700)
+        .windowResizability(.contentSize)
         .restorationBehavior(.disabled)
         .commands {
             CitadelCommands()
@@ -130,6 +147,7 @@ private struct WindowConfigurator: NSViewRepresentable {
         DispatchQueue.main.async {
             if let window = view.window {
                 WindowSecurity.apply(to: window)
+                window.minSize = NSSize(width: 900, height: 600)
             }
             WindowSecurity.startMonitoringNewWindows()
         }

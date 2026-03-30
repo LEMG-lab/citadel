@@ -1,92 +1,71 @@
 import SwiftUI
 import CitadelCore
 
-/// Sidebar list of vault entries with fuzzy search and group filtering.
+// MARK: - Sort Order
+
+enum SortOrder: String, CaseIterable {
+    case name = "Name"
+    case dateModified = "Date Modified"
+}
+
+// MARK: - Entry List View
+
+/// Middle column: searchable, sortable list of vault entries.
 struct EntryListView: View {
-    @Environment(AppState.self) private var appState
+    let entries: [VaultEntrySummary]
+    @Binding var selectedEntryID: String?
+
     @State private var searchText = ""
-    @State private var selectedGroup: String? = nil
+    @State private var sortOrder: SortOrder = .name
 
-    private var availableGroups: [String] {
-        let groups = Set(appState.entries.map(\.group))
-        return groups.sorted()
-    }
+    // MARK: - Filtered & sorted entries
 
-    private var filteredEntries: [(entry: VaultEntrySummary, score: Int)] {
-        var source = appState.entries
-
-        if let group = selectedGroup {
-            source = source.filter { $0.group == group || $0.group.hasPrefix(group + "/") }
-        }
-
-        var results: [(entry: VaultEntrySummary, score: Int)]
+    private var displayEntries: [VaultEntrySummary] {
+        var results: [VaultEntrySummary]
 
         if searchText.isEmpty {
-            results = source.map { ($0, 0) }
+            results = entries
         } else {
             let query = searchText
-            results = source.compactMap { entry in
-                let result = FuzzyMatch.bestMatch(
-                    query: query,
-                    fields: [entry.title, entry.username, entry.url]
-                )
-                guard result.score > 0 else { return nil }
-                return (entry, result.score)
-            }
-            .sorted { $0.score > $1.score }
+            results = entries
+                .compactMap { entry -> (entry: VaultEntrySummary, score: Int)? in
+                    let result = FuzzyMatch.bestMatch(
+                        query: query,
+                        fields: [entry.title, entry.username, entry.url]
+                    )
+                    guard result.score > 0 else { return nil }
+                    return (entry, result.score)
+                }
+                .sorted { $0.score > $1.score }
+                .map(\.entry)
         }
 
-        // Stable sort: favorites first
-        results.sort { lhs, rhs in
-            if lhs.entry.isFavorite != rhs.entry.isFavorite {
-                return lhs.entry.isFavorite
+        // Apply sort order (only when not searching, since search has its own ranking)
+        if searchText.isEmpty {
+            switch sortOrder {
+            case .name:
+                results.sort { $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending }
+            case .dateModified:
+                results.sort { ($0.lastModified ?? .distantPast) > ($1.lastModified ?? .distantPast) }
             }
-            return false
         }
 
         return results
     }
 
-    private var hasFavorites: Bool {
-        filteredEntries.contains { $0.entry.isFavorite }
-    }
+    // MARK: - Body
 
     var body: some View {
-        @Bindable var appState = appState
         VStack(spacing: 0) {
-            if availableGroups.count > 1 {
-                groupPicker
-            }
-
-            List(selection: $appState.selectedEntryID) {
-                if hasFavorites {
-                    Section {
-                        ForEach(filteredEntries.filter(\.entry.isFavorite), id: \.entry.id) { item in
-                            entryRow(item.entry)
-                                .tag(item.entry.id)
-                        }
-                    } header: {
-                        SectionHeader(title: "Favorites")
-                    }
-
-                    Section {
-                        ForEach(filteredEntries.filter { !$0.entry.isFavorite }, id: \.entry.id) { item in
-                            entryRow(item.entry)
-                                .tag(item.entry.id)
-                        }
-                    } header: {
-                        SectionHeader(title: "All Entries")
-                    }
-                } else {
-                    ForEach(filteredEntries, id: \.entry.id) { item in
-                        entryRow(item.entry)
-                            .tag(item.entry.id)
-                    }
+            List(selection: $selectedEntryID) {
+                ForEach(displayEntries) { entry in
+                    entryRow(entry)
+                        .tag(entry.id)
                 }
             }
             .searchable(text: $searchText, prompt: "Search entries")
             .overlay {
-                if appState.entries.isEmpty {
+                if entries.isEmpty {
                     VStack(spacing: 12) {
                         Image(systemName: "key.fill")
                             .font(.system(size: 32, weight: .light))
@@ -97,10 +76,47 @@ struct EntryListView: View {
                             .font(.system(size: 12))
                             .foregroundStyle(Color.citadelSecondary)
                     }
-                } else if filteredEntries.isEmpty {
+                } else if displayEntries.isEmpty {
                     ContentUnavailableView.search(text: searchText)
                 }
             }
+
+            Divider()
+
+            // Footer: item count and sort picker
+            HStack(spacing: 8) {
+                Text("\(displayEntries.count) item\(displayEntries.count == 1 ? "" : "s")")
+                    .font(.system(size: 11))
+                    .foregroundStyle(Color.citadelSecondary)
+
+                Spacer()
+
+                Menu {
+                    ForEach(SortOrder.allCases, id: \.self) { order in
+                        Button {
+                            sortOrder = order
+                        } label: {
+                            HStack {
+                                Text(order.rawValue)
+                                if sortOrder == order {
+                                    Image(systemName: "checkmark")
+                                }
+                            }
+                        }
+                    }
+                } label: {
+                    HStack(spacing: 3) {
+                        Image(systemName: "arrow.up.arrow.down")
+                            .font(.system(size: 10))
+                        Text(sortOrder.rawValue)
+                            .font(.system(size: 11))
+                    }
+                    .foregroundStyle(Color.citadelSecondary)
+                }
+                .buttonStyle(.plain)
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 6)
         }
     }
 
@@ -109,24 +125,31 @@ struct EntryListView: View {
     @ViewBuilder
     private func entryRow(_ entry: VaultEntrySummary) -> some View {
         HStack(spacing: 10) {
-            // Icon with colored background
-            entryIconBadge(entry)
+            EntryIcon(title: entry.title, entryType: entry.entryType, size: 34)
 
-            VStack(alignment: .leading, spacing: 1) {
+            VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 4) {
+                    Text(entry.title.isEmpty ? "(Untitled)" : entry.title)
+                        .font(.system(size: 14, weight: .semibold))
+                        .lineLimit(1)
                     if entry.isFavorite {
                         Image(systemName: "star.fill")
                             .font(.system(size: 9))
                             .foregroundStyle(.yellow)
                     }
-                    Text(entry.title.isEmpty ? "(Untitled)" : entry.title)
-                        .font(.system(size: 13, weight: .semibold))
-                        .lineLimit(1)
                 }
+
                 if entry.entryType != "secure_note" && !entry.username.isEmpty {
                     Text(entry.username)
+                        .font(.system(size: 12))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+
+                if let host = domain(from: entry.url) {
+                    Text(host)
                         .font(.system(size: 11))
-                        .foregroundStyle(Color.citadelSecondary)
+                        .foregroundStyle(.tertiary)
                         .lineLimit(1)
                 }
             }
@@ -137,66 +160,25 @@ struct EntryListView: View {
                 if expiry < Date() {
                     Circle()
                         .fill(Color.citadelDanger)
-                        .frame(width: 6, height: 6)
+                        .frame(width: 7, height: 7)
                         .help("Expired")
                 } else if expiry < Date().addingTimeInterval(7 * 24 * 3600) {
                     Circle()
                         .fill(Color.citadelWarning)
-                        .frame(width: 6, height: 6)
+                        .frame(width: 7, height: 7)
                         .help("Expiring soon")
                 }
             }
         }
-        .padding(.vertical, 2)
+        .padding(.vertical, 3)
     }
 
-    @ViewBuilder
-    private func entryIconBadge(_ entry: VaultEntrySummary) -> some View {
-        if entry.entryType == "secure_note" {
-            IconBadge(symbol: "note.text", color: .purple, size: 26)
-        } else {
-            IconBadge(symbol: "key.fill", color: .citadelAccent, size: 26)
-        }
-    }
+    // MARK: - Helpers
 
-    // MARK: - Group Picker
-
-    @ViewBuilder
-    private var groupPicker: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 6) {
-                groupChip(label: "All", group: nil)
-                ForEach(availableGroups, id: \.self) { group in
-                    groupChip(label: groupDisplayName(group), group: group)
-                }
-            }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 6)
-        }
-        Divider()
-    }
-
-    private func groupChip(label: String, group: String?) -> some View {
-        Button(label) {
-            selectedGroup = group
-        }
-        .buttonStyle(.plain)
-        .font(.system(size: 12, weight: selectedGroup == group ? .semibold : .regular))
-        .padding(.horizontal, 10)
-        .padding(.vertical, 4)
-        .background(
-            selectedGroup == group
-                ? Color.citadelAccent.opacity(0.15)
-                : Color.clear,
-            in: Capsule()
-        )
-        .foregroundStyle(selectedGroup == group ? Color.citadelAccent : Color.citadelSecondary)
-    }
-
-    private func groupDisplayName(_ path: String) -> String {
-        if let last = path.split(separator: "/").last {
-            return String(last)
-        }
-        return path
+    private func domain(from urlString: String) -> String? {
+        guard !urlString.isEmpty,
+              let url = URL(string: urlString),
+              let host = url.host else { return nil }
+        return host
     }
 }

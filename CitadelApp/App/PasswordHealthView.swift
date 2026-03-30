@@ -86,7 +86,7 @@ struct PasswordHealthView: View {
             Divider()
             footerBar
         }
-        .frame(width: 560, height: 620)
+        .frame(minWidth: 520, minHeight: 500)
         .task { await runAnalysis() }
         .confirmationDialog("Check for Breaches", isPresented: $showingBreachConsent, titleVisibility: .visible) {
             Button("Check Passwords") { Task { await runBreachCheck() } }
@@ -138,7 +138,7 @@ struct PasswordHealthView: View {
     @ViewBuilder
     private func dashboardContent(_ analysis: HealthAnalysis) -> some View {
         VStack(alignment: .leading, spacing: 20) {
-            scoreCard(analysis)
+            scoreGauge(analysis)
             breachSection(analysis)
             categoryCard(
                 icon: "exclamationmark.shield", color: .citadelDanger,
@@ -174,44 +174,41 @@ struct PasswordHealthView: View {
         .padding(20)
     }
 
-    // MARK: - Score Card
+    // MARK: - Score Gauge
 
     @ViewBuilder
-    private func scoreCard(_ analysis: HealthAnalysis) -> some View {
-        HStack(spacing: 16) {
+    private func scoreGauge(_ analysis: HealthAnalysis) -> some View {
+        VStack(spacing: 12) {
+            // Large circular gauge
             ZStack {
                 ProgressRing(
                     progress: Double(analysis.score) / 100.0,
                     color: analysis.scoreColor,
-                    lineWidth: 8
+                    lineWidth: 10
                 )
-                VStack(spacing: 0) {
-                    Text("\(analysis.score)")
-                        .font(.system(size: 28, weight: .bold, design: .rounded))
-                        .foregroundStyle(analysis.scoreColor)
-                    Text("/100")
-                        .font(.system(size: 10, weight: .medium))
-                        .foregroundStyle(Color.citadelSecondary)
-                }
+                Text("\(analysis.score)")
+                    .font(.system(size: 32, weight: .bold, design: .rounded))
+                    .foregroundStyle(analysis.scoreColor)
             }
-            .frame(width: 80, height: 80)
+            .frame(width: 100, height: 100)
 
-            VStack(alignment: .leading, spacing: 4) {
-                Text(analysis.scoreLabel)
-                    .font(.system(size: 18, weight: .bold))
-                if analysis.totalIssues == 0 {
-                    Text("No issues found. Great job!")
-                        .font(.system(size: 12))
-                        .foregroundStyle(Color.citadelSecondary)
-                } else {
-                    Text("\(analysis.totalIssues) issue\(analysis.totalIssues == 1 ? "" : "s") found")
-                        .font(.system(size: 12))
-                        .foregroundStyle(Color.citadelSecondary)
-                }
+            // Score label
+            Text(analysis.scoreLabel)
+                .font(.system(size: 18, weight: .bold))
+
+            // Issues count
+            if analysis.totalIssues == 0 {
+                Text("No issues found. Great job!")
+                    .font(.system(size: 12))
+                    .foregroundStyle(Color.citadelSecondary)
+            } else {
+                Text("\(analysis.totalIssues) issue\(analysis.totalIssues == 1 ? "" : "s") found")
+                    .font(.system(size: 12))
+                    .foregroundStyle(Color.citadelSecondary)
             }
-            Spacer()
         }
-        .padding(16)
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 20)
         .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
     }
 
