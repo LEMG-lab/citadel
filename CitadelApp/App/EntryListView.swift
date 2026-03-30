@@ -121,6 +121,11 @@ struct EntryListView: View {
                                     .onTapGesture {
                                         selectedEntryID = entry.id
                                     }
+                                    .contextMenu {
+                                        Button("Delete") {
+                                            deleteEntry(entry.id)
+                                        }
+                                    }
                             }
                         }
                         .padding(.vertical, 4)
@@ -271,5 +276,16 @@ struct EntryListView: View {
               let url = URL(string: urlString),
               let host = url.host else { return nil }
         return host
+    }
+
+    private func deleteEntry(_ id: String) {
+        do {
+            try appState.engine.deleteEntry(uuid: id)
+            try appState.save()
+            if selectedEntryID == id { selectedEntryID = nil }
+            try appState.refreshEntries()
+        } catch {
+            // Silently fail
+        }
     }
 }

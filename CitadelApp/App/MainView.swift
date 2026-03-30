@@ -38,6 +38,7 @@ struct MainView: View {
     @State private var showingPasswordHealth = false
     @State private var showingAuditLog = false
     @State private var showingGenerator = false
+    @State private var showingAbout = false
 
     // MARK: Alert state
 
@@ -74,7 +75,7 @@ struct MainView: View {
         case .tag(let t):
             return appState.entries.filter { $0.tagList.contains(t) }
         case .trash:
-            return [] // Trash entries are not in appState.entries
+            return appState.recycledEntries
         }
     }
 
@@ -107,7 +108,9 @@ struct MainView: View {
             )
             .navigationSplitViewColumnWidth(min: 240, ideal: 300, max: 420)
         } detail: {
-            if let id = appState.selectedEntryID {
+            if sidebarSelection == .trash, let id = appState.selectedEntryID {
+                TrashDetailView(entryID: id)
+            } else if let id = appState.selectedEntryID {
                 EntryDetailView(entryID: id)
             } else {
                 VStack(spacing: 12) {
@@ -164,6 +167,8 @@ struct MainView: View {
                     Button("Full Vault Backup\u{2026}") { showingFullBackup = true }
                     Button("Verify Backup\u{2026}") { verifyBackup() }
                     Button("Restore from Backup\u{2026}") { restoreBackup() }
+                    Divider()
+                    Button("About Citadel") { showingAbout = true }
                 } label: {
                     Image(systemName: "ellipsis.circle")
                 }
@@ -198,6 +203,9 @@ struct MainView: View {
         }
         .sheet(isPresented: $showingGenerator) {
             PasswordGeneratorView { _ in }
+        }
+        .sheet(isPresented: $showingAbout) {
+            AboutView()
         }
         // MARK: Alerts
         .alert("Backup", isPresented: $showingBackupResult) {
@@ -319,7 +327,7 @@ struct MainView: View {
 
             // Trash
             Section {
-                sidebarRow("Trash", icon: "trash", color: .gray, item: .trash, count: 0)
+                sidebarRow("Trash", icon: "trash", color: .gray, item: .trash, count: appState.recycledEntries.count)
             }
         }
         .listStyle(.sidebar)
@@ -583,5 +591,177 @@ struct FullBackupSheet: View {
             errorMessage = "Backup failed: \(error.localizedDescription)"
             successMessage = nil
         }
+    }
+}
+
+// MARK: - Trash Detail View
+
+/// Detail view for entries in the Recycle Bin — shows restore and permanently delete options.
+struct TrashDetailView: View {
+    @Environment(AppState.self) private var appState
+    let entryID: String
+
+    @State private var errorMessage: String?
+
+    private var entry: VaultEntrySummary? {
+        appState.recycledEntries.first { $0.id == entryID }
+    }
+
+    var body: some View {
+        if let entry {
+            VStack(spacing: 20) {
+                Spacer()
+
+                EntryIcon(title: entry.title, entryType: entry.entryType, size: 56)
+
+                Text(entry.title.isEmpty ? "(Untitled)" : entry.title)
+                    .font(.system(size: 18, weight: .semibold))
+
+                if !entry.username.isEmpty {
+                    Text(entry.username)
+                        .font(.system(size: 13))
+                        .foregroundStyle(.secondary)
+                }
+
+                Text("This entry is in the Trash.")
+                    .font(.system(size: 12))
+                    .foregroundStyle(.secondary)
+
+                HStack(spacing: 12) {
+                    Button {
+                        restoreEntry()
+                    } label: {
+                        Label("Restore", systemImage: "arrow.uturn.backward")
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(.citadelAccent)
+
+                    Button(role: .destructive) {
+                        permanentlyDelete()
+                    } label: {
+                        Label("Delete Permanently", systemImage: "trash.slash")
+                    }
+                    .buttonStyle(.bordered)
+                }
+
+                if let msg = errorMessage {
+                    Text(msg)
+                        .font(.system(size: 11))
+                        .foregroundStyle(.red)
+                }
+
+                Spacer()
+            }
+            .frame(maxWidth: .infinity)
+        } else {
+            Text("Entry not found")
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    private func restoreEntry() {
+        do {
+            try appState.engine.restoreEntry(uuid: entryID)
+            try appState.save()
+            try appState.refreshEntries()
+            appState.selectedEntryID = nil
+        } catch {
+            errorMessage = "Could not restore entry"
+        }
+    }
+
+    private func permanentlyDelete() {
+        do {
+            try appState.engine.permanentlyDeleteEntry(uuid: entryID)
+            try appState.save()
+            try appState.refreshEntries()
+            appState.selectedEntryID = nil
+        } catch {
+            errorMessage = "Could not delete entry"
+        }
+    }
+}
+
+// MARK: - About View
+
+struct AboutView: View {
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        VStack(spacing: 0) {
+            Spacer().frame(height: 30)
+
+            Image(systemName: "lock.shield.fill")
+                .font(.system(size: 48))
+                .foregroundStyle(.linearGradient(
+                    colors: [.citadelAccent, .blue],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                ))
+
+            Spacer().frame(height: 16)
+
+            Text("Citadel")
+                .font(.system(size: 24, weight: .bold))
+
+            Text("Personal Security Vault")
+                .font(.system(size: 13))
+                .foregroundStyle(.secondary)
+
+            Spacer().frame(height: 8)
+
+            Text("Version 1.5")
+                .font(.system(size: 12, design: .monospaced))
+                .foregroundStyle(.tertiary)
+
+            Spacer().frame(height: 24)
+
+            VStack(spacing: 6) {
+                Text("Created by Luis Maumejean G.")
+                    .font(.system(size: 12, weight: .medium))
+                Text("LEMG-lab")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+            }
+
+            Spacer().frame(height: 20)
+
+            VStack(spacing: 4) {
+                HStack(spacing: 6) {
+                    Image(systemName: "gearshape.2")
+                        .font(.system(size: 10))
+                        .foregroundStyle(.secondary)
+                    Text("Built with Rust + SwiftUI")
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                }
+                HStack(spacing: 6) {
+                    Image(systemName: "lock.fill")
+                        .font(.system(size: 10))
+                        .foregroundStyle(.secondary)
+                    Text("Encryption: ChaCha20-256 + Argon2id")
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                }
+                HStack(spacing: 6) {
+                    Image(systemName: "externaldrive")
+                        .font(.system(size: 10))
+                        .foregroundStyle(.secondary)
+                    Text("Format: KDBX 4 (KeePass compatible)")
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+            Spacer().frame(height: 24)
+
+            Button("OK") { dismiss() }
+                .buttonStyle(.borderedProminent)
+                .tint(.citadelAccent)
+                .keyboardShortcut(.defaultAction)
+
+            Spacer().frame(height: 20)
+        }
+        .frame(width: 320, height: 380)
     }
 }

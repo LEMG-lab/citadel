@@ -486,6 +486,78 @@ impl VaultState {
         Ok(())
     }
 
+    /// List entries currently in the Recycle Bin.
+    pub fn list_recycled_entries(&self) -> Vec<EntrySummary> {
+        let rb_uuid = match self.db.meta.recyclebin_uuid {
+            Some(u) if u != uuid::Uuid::nil() => u,
+            _ => return Vec::new(),
+        };
+        let rb = match self.db.root.group_by_uuid(rb_uuid) {
+            Some(g) => g,
+            None => return Vec::new(),
+        };
+        rb.entries
+            .iter()
+            .map(|entry| EntrySummary {
+                uuid: entry.uuid.to_string(),
+                title: entry.get_title().unwrap_or("").to_string(),
+                username: entry.get_username().unwrap_or("").to_string(),
+                url: entry.get_url().unwrap_or("").to_string(),
+                group: "Recycle Bin".to_string(),
+                entry_type: entry.get("Citadel_EntryType").unwrap_or("").to_string(),
+                tags: entry.get("Citadel_Tags").unwrap_or("").to_string(),
+                expiry_time: entry_expiry_timestamp(entry),
+                last_modified: entry_last_modified(entry),
+                is_favorite: entry
+                    .get("Citadel_Favorite")
+                    .map_or(false, |v| v == "true"),
+                attachment_count: entry.attachments.len() as u32,
+            })
+            .collect()
+    }
+
+    /// Restore an entry from the Recycle Bin back to the root group.
+    pub fn restore_entry(&mut self, uuid: uuid::Uuid) -> Result<(), VaultResult> {
+        let rb_uuid = match self.db.meta.recyclebin_uuid {
+            Some(u) if u != uuid::Uuid::nil() => u,
+            _ => return Err(VaultResult::InternalError),
+        };
+        let rb = self
+            .db
+            .root
+            .group_by_uuid_mut(rb_uuid)
+            .ok_or(VaultResult::InternalError)?;
+        let idx = rb
+            .entries
+            .iter()
+            .position(|e| e.uuid == uuid)
+            .ok_or(VaultResult::InternalError)?;
+        let entry = rb.entries.remove(idx);
+        self.db.root.entries.push(entry);
+        self.db.deleted_objects.remove(&uuid);
+        Ok(())
+    }
+
+    /// Permanently delete a single entry from the Recycle Bin.
+    pub fn permanently_delete_entry(&mut self, uuid: uuid::Uuid) -> Result<(), VaultResult> {
+        let rb_uuid = match self.db.meta.recyclebin_uuid {
+            Some(u) if u != uuid::Uuid::nil() => u,
+            _ => return Err(VaultResult::InternalError),
+        };
+        let rb = self
+            .db
+            .root
+            .group_by_uuid_mut(rb_uuid)
+            .ok_or(VaultResult::InternalError)?;
+        let idx = rb
+            .entries
+            .iter()
+            .position(|e| e.uuid == uuid)
+            .ok_or(VaultResult::InternalError)?;
+        rb.entries.remove(idx);
+        Ok(())
+    }
+
     /// Permanently remove all entries in the Recycle Bin group.
     pub fn empty_recyclebin(&mut self) -> Result<usize, VaultResult> {
         let rb_uuid = match self.db.meta.recyclebin_uuid {

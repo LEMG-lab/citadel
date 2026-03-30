@@ -259,6 +259,22 @@ void group_list_free(char **groups, uint32_t count);
 enum VaultResult vault_empty_recyclebin(void *handle, uint32_t *count_out);
 
 /**
+ * List entries in the Recycle Bin. Returns the same CEntryList structure.
+ * Free with `entry_list_free`.
+ */
+enum VaultResult vault_list_recycled_entries(void *handle, struct CEntryList **list_out);
+
+/**
+ * Restore an entry from the Recycle Bin back to the root group.
+ */
+enum VaultResult vault_restore_entry(void *handle, const char *uuid_str);
+
+/**
+ * Permanently delete a single entry from the Recycle Bin.
+ */
+enum VaultResult vault_permanently_delete_entry(void *handle, const char *uuid_str);
+
+/**
  * Get the password history for an entry. Returns a list of (password, timestamp) pairs.
  * Free with `history_list_free`.
  */

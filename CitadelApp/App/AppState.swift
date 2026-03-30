@@ -19,6 +19,7 @@ final class AppState {
 
     var isLocked = true
     var entries: [VaultEntrySummary] = []
+    var recycledEntries: [VaultEntrySummary] = []
     var selectedEntryID: String?
     var errorMessage: String?
 
@@ -315,6 +316,7 @@ final class AppState {
         currentPassword = nil
         currentKeyfilePath = nil
         entries = []
+        recycledEntries = []
         entryAlerts = [:]
         selectedEntryID = nil
         errorMessage = nil
@@ -336,6 +338,7 @@ final class AppState {
 
     func refreshEntries() throws {
         entries = try engine.listEntries()
+        recycledEntries = (try? engine.listRecycledEntries()) ?? []
         computeEntryAlerts()
         statusBar?.refresh()
     }

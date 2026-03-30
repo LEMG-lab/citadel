@@ -567,6 +567,107 @@ pub extern "C" fn vault_empty_recyclebin(
     result.unwrap_or(VaultResult::InternalError)
 }
 
+/// List entries in the Recycle Bin. Returns the same CEntryList structure.
+/// Free with `entry_list_free`.
+#[no_mangle]
+pub extern "C" fn vault_list_recycled_entries(
+    handle: *mut c_void,
+    list_out: *mut *mut CEntryList,
+) -> VaultResult {
+    if handle.is_null() || list_out.is_null() {
+        return VaultResult::InternalError;
+    }
+    let result = catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let state = unsafe { &*(handle as *const VaultState) };
+        let summaries = state.list_recycled_entries();
+
+        let count = summaries.len() as u32;
+        let items: Vec<CEntryListItem> = summaries
+            .iter()
+            .map(|s| CEntryListItem {
+                uuid: str_to_c(&s.uuid),
+                title: str_to_c(&s.title),
+                username: str_to_c(&s.username),
+                url: str_to_c(&s.url),
+                group: str_to_c(&s.group),
+                entry_type: str_to_c(&s.entry_type),
+                tags: str_to_c(&s.tags),
+                expiry_time: s.expiry_time,
+                last_modified: s.last_modified,
+                is_favorite: s.is_favorite,
+                attachment_count: s.attachment_count,
+            })
+            .collect();
+
+        let items_ptr = if items.is_empty() {
+            std::ptr::null_mut()
+        } else {
+            let mut items = items.into_boxed_slice();
+            let ptr = items.as_mut_ptr();
+            std::mem::forget(items);
+            ptr
+        };
+
+        let list = Box::new(CEntryList {
+            entries: items_ptr,
+            count,
+        });
+        unsafe {
+            *list_out = Box::into_raw(list);
+        }
+        VaultResult::Ok
+    }));
+    result.unwrap_or(VaultResult::InternalError)
+}
+
+/// Restore an entry from the Recycle Bin back to the root group.
+#[no_mangle]
+pub extern "C" fn vault_restore_entry(
+    handle: *mut c_void,
+    uuid_str: *const c_char,
+) -> VaultResult {
+    if handle.is_null() || uuid_str.is_null() {
+        return VaultResult::InternalError;
+    }
+    let result = catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let state = unsafe { &mut *(handle as *mut VaultState) };
+        let uuid_s = unsafe { cstr_to_str(uuid_str) };
+        let uuid = match uuid::Uuid::parse_str(uuid_s) {
+            Ok(u) => u,
+            Err(_) => return VaultResult::InternalError,
+        };
+        match state.restore_entry(uuid) {
+            Ok(()) => VaultResult::Ok,
+            Err(e) => e,
+        }
+    }));
+    result.unwrap_or(VaultResult::InternalError)
+}
+
+/// Permanently delete a single entry from the Recycle Bin.
+#[no_mangle]
+pub extern "C" fn vault_permanently_delete_entry(
+    handle: *mut c_void,
+    uuid_str: *const c_char,
+) -> VaultResult {
+    if handle.is_null() || uuid_str.is_null() {
+        return VaultResult::InternalError;
+    }
+    let result = catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let state = unsafe { &mut *(handle as *mut VaultState) };
+        let uuid_s = unsafe { cstr_to_str(uuid_str) };
+        let uuid = match uuid::Uuid::parse_str(uuid_s) {
+            Ok(u) => u,
+            Err(_) => return VaultResult::InternalError,
+        };
+        match state.permanently_delete_entry(uuid) {
+            Ok(()) => VaultResult::Ok,
+            Err(e) => e,
+        }
+    }));
+    result.unwrap_or(VaultResult::InternalError)
+}
+
 // ---------------------------------------------------------------------------
 // Password history
 // ---------------------------------------------------------------------------

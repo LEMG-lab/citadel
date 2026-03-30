@@ -61,6 +61,23 @@ public enum EntryTemplate: String, CaseIterable, Identifiable {
         }
     }
 
+    /// The entry type string stored in the Citadel_EntryType custom field.
+    public var typeString: String {
+        switch self {
+        case .login:           return "password"
+        case .cryptoWallet:    return "crypto_wallet"
+        case .serverSSH:       return "server_ssh"
+        case .apiKey:          return "api_key"
+        case .database:        return "database"
+        case .emailAccount:    return "email_account"
+        case .creditCard:      return "credit_card"
+        case .identity:        return "identity"
+        case .secureNote:      return "secure_note"
+        case .recoveryCodes:   return "recovery_codes"
+        case .softwareLicense: return "software_license"
+        }
+    }
+
     /// Whether this template creates a "secure_note" entry type.
     public var isSecureNote: Bool {
         self == .secureNote

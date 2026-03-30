@@ -343,6 +343,62 @@ public final class VaultEngine: @unchecked Sendable {
         return Int(count)
     }
 
+    /// List entries currently in the Recycle Bin.
+    public func listRecycledEntries() throws -> [VaultEntrySummary] {
+        lock.lock()
+        defer { lock.unlock() }
+        let h = try _requireHandle()
+        var listPtr: UnsafeMutablePointer<CEntryList>?
+        let result = vault_list_recycled_entries(h, &listPtr)
+        try check(result)
+
+        guard let list = listPtr?.pointee else { return [] }
+        defer { entry_list_free(listPtr) }
+
+        var entries: [VaultEntrySummary] = []
+        entries.reserveCapacity(Int(list.count))
+
+        for i in 0..<Int(list.count) {
+            let item = list.entries.advanced(by: i).pointee
+            entries.append(VaultEntrySummary(
+                id: cString(item.uuid),
+                title: cString(item.title),
+                username: cString(item.username),
+                url: cString(item.url),
+                group: cString(item.group),
+                entryType: cString(item.entry_type),
+                tags: cString(item.tags),
+                expiryDate: item.expiry_time > 0 ? Date(timeIntervalSince1970: TimeInterval(item.expiry_time)) : nil,
+                lastModified: item.last_modified > 0 ? Date(timeIntervalSince1970: TimeInterval(item.last_modified)) : nil,
+                isFavorite: item.is_favorite,
+                attachmentCount: Int(item.attachment_count)
+            ))
+        }
+        return entries
+    }
+
+    /// Restore an entry from the Recycle Bin back to the root group.
+    public func restoreEntry(uuid: String) throws {
+        lock.lock()
+        defer { lock.unlock() }
+        let h = try _requireHandle()
+        let result = uuid.withCString { cUuid in
+            vault_restore_entry(h, cUuid)
+        }
+        try check(result)
+    }
+
+    /// Permanently delete a single entry from the Recycle Bin.
+    public func permanentlyDeleteEntry(uuid: String) throws {
+        lock.lock()
+        defer { lock.unlock() }
+        let h = try _requireHandle()
+        let result = uuid.withCString { cUuid in
+            vault_permanently_delete_entry(h, cUuid)
+        }
+        try check(result)
+    }
+
     /// Get password history for an entry. Returns (password as string, date) pairs.
     public func getEntryHistory(uuid: String) throws -> [(password: String, date: Date)] {
         lock.lock()

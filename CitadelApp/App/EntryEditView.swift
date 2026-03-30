@@ -461,12 +461,7 @@ struct EntryEditView: View {
 
     private func applyTemplate(_ template: EntryTemplate) {
         selectedTemplate = template
-
-        if template.isSecureNote {
-            entryType = "secure_note"
-        } else {
-            entryType = "password"
-        }
+        entryType = template.typeString
 
         // Only set fields from template on first application or when switching templates
         if !templateApplied || true {
@@ -515,10 +510,10 @@ struct EntryEditView: View {
                     otpURI: isSecureNote ? "" : otpURI, group: effectiveGroup,
                     expiryDate: expiry
                 )
-                if entryType == "secure_note" {
+                if entryType != "password" && !entryType.isEmpty {
                     try appState.engine.setCustomField(
                         uuid: uuid, key: "Citadel_EntryType",
-                        value: "secure_note", isProtected: false
+                        value: entryType, isProtected: false
                     )
                 }
                 for field in customFields where !field.key.isEmpty {
@@ -541,6 +536,15 @@ struct EntryEditView: View {
                     password: pwData, url: url, notes: notes,
                     otpURI: otpURI, expiryDate: expiry
                 )
+                // Sync entry type
+                if entryType != "password" && !entryType.isEmpty {
+                    try appState.engine.setCustomField(
+                        uuid: entry.uuid, key: "Citadel_EntryType",
+                        value: entryType, isProtected: false
+                    )
+                } else {
+                    try appState.engine.removeCustomField(uuid: entry.uuid, key: "Citadel_EntryType")
+                }
                 let newKeys = Set(customFields.filter { !$0.key.isEmpty }.map(\.key))
                 for old in entry.customFields where old.key != "Citadel_Tags" {
                     if !newKeys.contains(old.key) {
