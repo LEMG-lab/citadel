@@ -62,9 +62,11 @@ PLIST
 # 5. Copy binary (rename from Swift target name to app name)
 cp "$BINARY" "${INSTALL_PATH}/Contents/MacOS/${APP_NAME}"
 
-# 6. Sign with --deep
-echo "Signing with codesign --deep"
-codesign --force --deep --options runtime --sign - "$INSTALL_PATH"
+# 6. Sign with Apple Development identity and entitlements
+SIGN_IDENTITY="Apple Development: luis@expertop.com (AKT66WTDPP)"
+ENTITLEMENTS="$(dirname "$0")/CitadelApp.entitlements"
+echo "Signing with: ${SIGN_IDENTITY}"
+codesign --force --deep --options runtime --entitlements "$ENTITLEMENTS" --sign "$SIGN_IDENTITY" "$INSTALL_PATH"
 
 # 7. Verify signature
 echo "Verifying signature"
