@@ -440,14 +440,11 @@ struct LockScreenView: View {
     }
 
     private func unlockWithBiometrics() {
-        print("BIO UNLOCK: Touch ID button tapped")
         errorMessage = nil
         Task {
             do {
                 try await appState.unlockWithBiometrics()
-                print("BIO UNLOCK: Success — vault is open")
             } catch {
-                print("BIO UNLOCK: Failed — \(error)")
                 errorMessage = "Touch ID failed \u{2014} enter password manually"
             }
         }

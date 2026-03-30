@@ -6,7 +6,7 @@
 # Manual:  bash ~/Projects/citadel/scripts/healthcheck.sh
 # ============================================================================
 
-VAULT_DIR="$HOME/.citadel"
+VAULT_DIR="$HOME/.smaug"
 VAULT_FILE="$VAULT_DIR/vault.kdbx"
 LOG_DIR="$VAULT_DIR/.healthcheck"
 TODAY=$(date +%Y-%m-%d)

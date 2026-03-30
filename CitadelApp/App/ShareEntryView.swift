@@ -164,15 +164,21 @@ struct ShareEntryView: View {
         .buttonStyle(.borderedProminent)
         .tint(copied ? .citadelSuccess : .citadelAccent)
 
-        HStack(spacing: 6) {
-            Image(systemName: "info.circle")
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 6) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .font(.system(size: 12))
+                    .foregroundStyle(Color.citadelWarning)
+                Text("Security Warning")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(Color.citadelWarning)
+            }
+            Text("Anyone with this link can see the shared fields. The encryption key is embedded in the link itself \u{2014} treat it like a password. Send it through a secure channel (not unencrypted email). The link works offline \u{2014} no server needed.")
                 .font(.system(size: 11))
-            Text("Anyone with this link can see the shared fields. The link works offline \u{2014} no server needed.")
-                .font(.system(size: 11))
+                .foregroundStyle(Color.citadelSecondary)
         }
-        .foregroundStyle(Color.citadelSecondary)
         .padding(10)
-        .background(Color.citadelAccent.opacity(0.06), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .background(Color.citadelWarning.opacity(0.08), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
     }
 
     private func generateLink() {

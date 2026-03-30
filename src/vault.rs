@@ -185,11 +185,15 @@ impl VaultState {
     }
 
     /// Update the KDF parameters. Takes effect on next save.
+    /// Enforces minimum security floor: 64 MB memory, 2 iterations, 1 parallelism.
     pub fn set_kdf_params(&mut self, kdf: KdfParams) {
+        let memory = kdf.memory.max(64 * 1024 * 1024);      // floor: 64 MB
+        let iterations = kdf.iterations.max(2);               // floor: 2
+        let parallelism = kdf.parallelism.max(1);             // floor: 1
         self.db.config.kdf_config = KdfConfig::Argon2id {
-            memory: kdf.memory,
-            iterations: kdf.iterations,
-            parallelism: kdf.parallelism,
+            memory,
+            iterations,
+            parallelism,
             version: argon2::Version::Version13,
         };
     }

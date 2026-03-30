@@ -38,6 +38,7 @@ final class LargeTypeWindow {
         panel.isOpaque = false
         panel.hasShadow = true
         panel.hidesOnDeactivate = false
+        panel.sharingType = .none
         panel.contentView = hostingView
         panel.center()
         panel.orderFrontRegardless()

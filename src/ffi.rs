@@ -724,6 +724,17 @@ pub extern "C" fn history_list_free(list: *mut CHistoryList) {
         if !list.items.is_null() && list.count > 0 {
             let items = Vec::from_raw_parts(list.items, list.count as usize, list.count as usize);
             for item in items {
+                // Zeroize password bytes before freeing (same pattern as entry_data_free)
+                if !item.password.is_null() {
+                    let len = CStr::from_ptr(item.password).to_bytes().len();
+                    if len > 0 {
+                        let raw = std::ptr::slice_from_raw_parts_mut(
+                            item.password as *mut u8,
+                            len,
+                        );
+                        (&mut *raw).zeroize();
+                    }
+                }
                 free_c_string(item.password);
             }
         }
@@ -1098,4 +1109,49 @@ pub extern "C" fn entry_data_free(data: *mut CEntryData) {
         free_c_string(data.otp_uri);
         free_c_string(data.entry_type);
     }));
+}
+
+// ---------------------------------------------------------------------------
+// Argon2id key derivation (for backup/emergency encryption)
+// ---------------------------------------------------------------------------
+
+/// Derive a 32-byte key from password + salt using Argon2id.
+/// Parameters: 64 MB memory, 3 iterations, 2 parallelism lanes.
+/// Caller must provide a 32-byte output buffer.
+#[no_mangle]
+pub extern "C" fn vault_derive_key_argon2(
+    password_ptr: *const u8,
+    password_len: u32,
+    salt_ptr: *const u8,
+    salt_len: u32,
+    out_ptr: *mut u8,
+    out_len: u32,
+) -> VaultResult {
+    if password_ptr.is_null() || salt_ptr.is_null() || out_ptr.is_null() || out_len < 32 {
+        return VaultResult::InternalError;
+    }
+    let result = catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let password = unsafe { slice::from_raw_parts(password_ptr, password_len as usize) };
+        let salt = unsafe { slice::from_raw_parts(salt_ptr, salt_len as usize) };
+
+        let config = argon2::Config {
+            variant: argon2::Variant::Argon2id,
+            version: argon2::Version::Version13,
+            mem_cost: 65536,   // 64 MB in KiB
+            time_cost: 3,
+            lanes: 2,
+            hash_length: 32,
+            ..argon2::Config::default()
+        };
+
+        match argon2::hash_raw(password, salt, &config) {
+            Ok(hash) => {
+                let out = unsafe { slice::from_raw_parts_mut(out_ptr, 32) };
+                out.copy_from_slice(&hash[..32]);
+                VaultResult::Ok
+            }
+            Err(_) => VaultResult::InternalError,
+        }
+    }));
+    result.unwrap_or(VaultResult::InternalError)
 }

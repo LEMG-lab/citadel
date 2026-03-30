@@ -242,7 +242,7 @@ final class AppState {
         isLocked = false
         errorMessage = nil
         autoLockManager?.start()
-        biometricManager.recordFullAuth()
+        biometricManager.recordFullAuth(password: password)
         auditLogger.log(.unlock)
         checkExpiredEntries()
         computeEntryAlerts()
@@ -263,7 +263,7 @@ final class AppState {
         isLocked = false
         errorMessage = nil
         autoLockManager?.start()
-        biometricManager.recordFullAuth()
+        biometricManager.recordFullAuth(password: password)
         auditLogger.log(.unlock)
         checkExpiredEntries()
         computeEntryAlerts()
@@ -271,11 +271,8 @@ final class AppState {
     }
 
     func unlockWithBiometrics() async throws {
-        print("BIO UNLOCK: Starting biometric unlock flow")
         let password = try await biometricManager.unlock()
-        print("BIO UNLOCK: Got password (\(password.count) bytes), opening vault")
         try await unlockAsync(password: password, keyfilePath: currentKeyfilePath)
-        print("BIO UNLOCK: Vault opened successfully")
     }
 
     func createVault(password: Data, keyfilePath: String? = nil) throws {
@@ -315,6 +312,7 @@ final class AppState {
     func lockVault() {
         autoLockManager?.stop()
         engine.close()
+        clipboard.forceClear()
         if currentPassword != nil {
             currentPassword!.resetBytes(in: 0..<currentPassword!.count)
         }
@@ -328,8 +326,22 @@ final class AppState {
         expiredEntriesMessage = nil
         isLoading = false
         isLocked = true
+        cleanupTempFiles()
         auditLogger.log(.lock)
         statusBar?.refresh()
+    }
+
+    // MARK: - Temp file cleanup
+
+    /// Remove temporary files (attachments, emergency vault extractions) on lock.
+    private func cleanupTempFiles() {
+        let fm = FileManager.default
+        let tmpBase = fm.temporaryDirectory
+        let dirs = ["smaug-attachments", "smaug-emergency"]
+        for dir in dirs {
+            let path = tmpBase.appendingPathComponent(dir)
+            try? fm.removeItem(at: path)
+        }
     }
 
     // MARK: - Persistence

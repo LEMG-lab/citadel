@@ -715,10 +715,15 @@ struct EntryDetailView: View {
         do {
             let data = try appState.engine.getAttachment(uuid: entryID, name: name)
             let tmpDir = FileManager.default.temporaryDirectory.appendingPathComponent("smaug-attachments", isDirectory: true)
-            try FileManager.default.createDirectory(at: tmpDir, withIntermediateDirectories: true)
+            try FileManager.default.createDirectory(at: tmpDir, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
             let fileURL = tmpDir.appendingPathComponent(name)
-            try data.write(to: fileURL)
+            try data.write(to: fileURL, options: [.atomic])
+            try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: fileURL.path)
             NSWorkspace.shared.open(fileURL)
+            // Schedule cleanup after 60 seconds
+            DispatchQueue.main.asyncAfter(deadline: .now() + 60) {
+                try? FileManager.default.removeItem(at: fileURL)
+            }
         } catch {
             errorMessage = "Could not open attachment"
         }

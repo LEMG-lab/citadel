@@ -3,7 +3,11 @@ import CryptoKit
 
 /// Creates and restores encrypted vault backup bundles.
 /// Format: manifest JSON + vault files, all encrypted with ChaChaPoly using a user-provided backup password.
+/// v2 uses Argon2id key derivation with random salt. v1 (legacy SHA-256) is supported for reading.
 public enum VaultBackupBundle {
+
+    private static let magic = Data("CTDL".utf8)
+    private static let versionArgon2: UInt8 = 0x02
 
     public struct Manifest: Codable {
         public let version: Int
@@ -19,6 +23,7 @@ public enum VaultBackupBundle {
     }
 
     /// Create an encrypted backup bundle containing all vault files.
+    /// Uses Argon2id key derivation (v2 format).
     public static func createBackup(
         vaults: [(name: String, path: String, keyfilePath: String?)],
         backupPassword: String,
@@ -72,13 +77,19 @@ public enum VaultBackupBundle {
             container.append(file.data)
         }
 
-        // Derive key from backup password
-        let key = deriveKey(from: backupPassword)
+        // Derive key from backup password using Argon2id with random salt
+        let salt = Argon2Bridge.randomSalt()
+        guard let key = Argon2Bridge.deriveKey(from: backupPassword, salt: salt) else {
+            throw BackupBundleError.keyDerivationFailed
+        }
 
         // Encrypt
         let sealed = try ChaChaPoly.seal(container, using: key)
-        let magic = Data("CTDL".utf8) // Magic bytes for identification
+
+        // Write: magic(4) + version(1) + salt(32) + sealed.combined
         var output = magic
+        output.append(versionArgon2)
+        output.append(salt)
         output.append(sealed.combined)
         try output.write(to: destination)
     }
@@ -126,13 +137,27 @@ public enum VaultBackupBundle {
 
     // MARK: - Internal
 
+    /// Decrypt backup file. Supports v2 (Argon2id) and v1 (legacy SHA-256) formats.
     private static func decrypt(at url: URL, backupPassword: String) throws -> Data {
         let raw = try Data(contentsOf: url)
-        guard raw.count > 4, raw.prefix(4) == Data("CTDL".utf8) else {
+        guard raw.count > 4, raw.prefix(4) == magic else {
             throw BackupBundleError.invalidFormat
         }
+
+        // Check for v2 format: magic(4) + 0x02(1) + salt(32) + sealed
+        if raw.count > 37 && raw[4] == versionArgon2 {
+            let salt = raw.subdata(in: 5..<37)
+            let encrypted = raw.dropFirst(37)
+            guard let key = Argon2Bridge.deriveKey(from: backupPassword, salt: salt) else {
+                throw BackupBundleError.keyDerivationFailed
+            }
+            let sealedBox = try ChaChaPoly.SealedBox(combined: encrypted)
+            return try ChaChaPoly.open(sealedBox, using: key)
+        }
+
+        // v1 legacy: magic(4) + sealed (SHA-256 key derivation)
         let encrypted = raw.dropFirst(4)
-        let key = deriveKey(from: backupPassword)
+        let key = deriveLegacyKey(from: backupPassword)
         let sealedBox = try ChaChaPoly.SealedBox(combined: encrypted)
         return try ChaChaPoly.open(sealedBox, using: key)
     }
@@ -174,7 +199,8 @@ public enum VaultBackupBundle {
         return try JSONDecoder().decode(Manifest.self, from: manifestData)
     }
 
-    private static func deriveKey(from password: String) -> SymmetricKey {
+    /// Legacy SHA-256 key derivation for reading old backup files.
+    private static func deriveLegacyKey(from password: String) -> SymmetricKey {
         let salt = Data("CitadelBackupSalt-v1".utf8)
         let input = Data(password.utf8) + salt
         let hash = SHA256.hash(data: input)
@@ -191,6 +217,7 @@ public enum BackupBundleError: Error, LocalizedError {
     case missingManifest
     case missingFile(String)
     case checksumMismatch(String)
+    case keyDerivationFailed
 
     public var errorDescription: String? {
         switch self {
@@ -198,6 +225,7 @@ public enum BackupBundleError: Error, LocalizedError {
         case .missingManifest: return "Backup manifest is missing"
         case .missingFile(let name): return "Missing file in backup: \(name)"
         case .checksumMismatch(let name): return "Checksum mismatch for: \(name)"
+        case .keyDerivationFailed: return "Key derivation failed"
         }
     }
 }

@@ -361,4 +361,16 @@ void entry_list_free(struct CEntryList *list);
 
 void entry_data_free(struct CEntryData *data);
 
+/**
+ * Derive a 32-byte key from password + salt using Argon2id.
+ * Parameters: 64 MB memory, 3 iterations, 2 parallelism lanes.
+ * Caller must provide a 32-byte output buffer.
+ */
+enum VaultResult vault_derive_key_argon2(const uint8_t *password_ptr,
+                                         uint32_t password_len,
+                                         const uint8_t *salt_ptr,
+                                         uint32_t salt_len,
+                                         uint8_t *out_ptr,
+                                         uint32_t out_len);
+
 #endif  /* CITADEL_CORE_H */

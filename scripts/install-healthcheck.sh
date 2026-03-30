@@ -37,9 +37,9 @@ cat > "$PLIST_FILE" << EOF
         <integer>0</integer>
     </dict>
     <key>StandardOutPath</key>
-    <string>${HOME}/.citadel/.healthcheck/launchd-stdout.log</string>
+    <string>${HOME}/.smaug/.healthcheck/launchd-stdout.log</string>
     <key>StandardErrorPath</key>
-    <string>${HOME}/.citadel/.healthcheck/launchd-stderr.log</string>
+    <string>${HOME}/.smaug/.healthcheck/launchd-stderr.log</string>
 </dict>
 </plist>
 EOF
@@ -52,7 +52,7 @@ echo "Smaug health check installed."
 echo ""
 echo "  Runs daily at 10:00 AM"
 echo "  Notifies ONLY if problems are found"
-echo "  Logs: ~/.citadel/.healthcheck/"
+echo "  Logs: ~/.smaug/.healthcheck/"
 echo ""
 echo "  Manual run: bash $SCRIPT_DIR/healthcheck.sh"
 echo "  Uninstall:  launchctl unload $PLIST_FILE && rm $PLIST_FILE"

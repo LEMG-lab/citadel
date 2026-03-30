@@ -29,11 +29,13 @@ private final class HotkeyHandler: @unchecked Sendable {
         }, 1, &eventType, nil, nil)
 
         let status = RegisterEventHotKey(49, modifiers, hotkeyID, GetApplicationEventTarget(), 0, &hotkeyRef)
+        #if DEBUG
         if status != noErr {
             print("QUICK ACCESS: Carbon hotkey registration failed: \(status)")
         } else {
             print("QUICK ACCESS: Carbon hotkey registered (Cmd+Shift+Space)")
         }
+        #endif
     }
 
     func unregister() {
@@ -108,6 +110,7 @@ final class QuickAccessPanel {
         panel.titleVisibility = .hidden
         panel.titlebarAppearsTransparent = true
         panel.isMovableByWindowBackground = true
+        panel.sharingType = .none
         panel.contentView = hostingView
         panel.center()
         panel.makeKeyAndOrderFront(nil)
