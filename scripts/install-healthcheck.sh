@@ -1,6 +1,6 @@
 #!/bin/bash
 # ============================================================================
-# Installs Citadel health check as a daily launchd job
+# Installs Smaug health check as a daily launchd job
 # Runs automatically at 10:00 AM every day
 # Shows a macOS notification ONLY if something is wrong
 # ============================================================================
@@ -48,7 +48,7 @@ EOF
 launchctl unload "$PLIST_FILE" 2>/dev/null
 launchctl load "$PLIST_FILE"
 
-echo "Citadel health check installed."
+echo "Smaug health check installed."
 echo ""
 echo "  Runs daily at 10:00 AM"
 echo "  Notifies ONLY if problems are found"

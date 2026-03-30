@@ -1,13 +1,13 @@
 #!/bin/bash
 set -euo pipefail
 
-# Build Citadel.app with hardened runtime.
+# Build Smaug.app with hardened runtime.
 # Usage: ./scripts/build-app.sh
-# Output: ./Citadel.app
+# Output: ./Smaug.app
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-APP="$ROOT/Citadel.app"
+APP="$ROOT/Smaug.app"
 
 echo "==> Building Rust core..."
 cd "$ROOT"
@@ -17,13 +17,13 @@ echo "==> Building Swift app..."
 cd "$ROOT/CitadelApp"
 swift build -c release
 
-echo "==> Creating Citadel.app bundle..."
+echo "==> Creating Smaug.app bundle..."
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS"
 mkdir -p "$APP/Contents/Resources"
 
-# Copy binary
-cp "$ROOT/CitadelApp/.build/arm64-apple-macosx/release/Citadel" "$APP/Contents/MacOS/"
+# Copy binary (Swift target is still named "Citadel"; rename to "Smaug" for the bundle)
+cp "$ROOT/CitadelApp/.build/arm64-apple-macosx/release/Citadel" "$APP/Contents/MacOS/Smaug"
 
 # Copy Info.plist
 cp "$ROOT/CitadelApp/Info.plist" "$APP/Contents/"
@@ -44,3 +44,5 @@ echo "  - DYLD environment variables blocked"
 echo "  - Core dumps disabled (RLIMIT_CORE = 0)"
 echo ""
 echo "Verify: codesign -dvv '$APP'"
+echo "Note: The Swift executable target is still named 'Citadel' but the binary is"
+echo "      copied as 'Smaug' inside the .app bundle."

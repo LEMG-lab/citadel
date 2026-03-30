@@ -168,7 +168,7 @@ struct MainView: View {
                     Button("Verify Backup\u{2026}") { verifyBackup() }
                     Button("Restore from Backup\u{2026}") { restoreBackup() }
                     Divider()
-                    Button("About Citadel") { showingAbout = true }
+                    Button("About Smaug") { showingAbout = true }
                 } label: {
                     Image(systemName: "ellipsis.circle")
                 }
@@ -244,6 +244,9 @@ struct MainView: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: .citadelCopyUsername)) { _ in
             copySelectedUsername()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .citadelShowAbout)) { _ in
+            showingAbout = true
         }
     }
 
@@ -398,7 +401,7 @@ struct MainView: View {
             let csvData = CSVManager.export(entries: entries)
             let panel = NSSavePanel()
             panel.title = "Export Entries as CSV"
-            panel.nameFieldStringValue = "citadel-export.csv"
+            panel.nameFieldStringValue = "smaug-export.csv"
             panel.allowedContentTypes = [.commaSeparatedText]
             guard panel.runModal() == .OK, let url = panel.url else { return }
             try csvData.write(to: url)
@@ -579,7 +582,7 @@ struct FullBackupSheet: View {
     private func createBackup() {
         let panel = NSSavePanel()
         panel.title = "Save Encrypted Backup"
-        panel.nameFieldStringValue = "citadel-backup.ctdl"
+        panel.nameFieldStringValue = "smaug-backup.ctdl"
         panel.canCreateDirectories = true
         guard panel.runModal() == .OK, let url = panel.url else { return }
 
@@ -701,59 +704,60 @@ struct AboutView: View {
 
             Spacer().frame(height: 16)
 
-            Text("Citadel")
-                .font(.system(size: 24, weight: .bold))
+            Text("Smaug")
+                .font(.system(size: 28, weight: .semibold))
 
             Text("Personal Security Vault")
                 .font(.system(size: 13))
                 .foregroundStyle(.secondary)
 
-            Spacer().frame(height: 8)
-
-            Text("Version 1.5")
+            Text("v1.5")
                 .font(.system(size: 12, design: .monospaced))
                 .foregroundStyle(.tertiary)
-
-            Spacer().frame(height: 24)
-
-            VStack(spacing: 6) {
-                Text("Created by Luis Maumejean G.")
-                    .font(.system(size: 12, weight: .medium))
-                Text("LEMG-lab")
-                    .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
-            }
+                .padding(.top, 2)
 
             Spacer().frame(height: 20)
 
             VStack(spacing: 4) {
-                HStack(spacing: 6) {
-                    Image(systemName: "gearshape.2")
-                        .font(.system(size: 10))
-                        .foregroundStyle(.secondary)
-                    Text("Built with Rust + SwiftUI")
-                        .font(.system(size: 11))
-                        .foregroundStyle(.secondary)
-                }
-                HStack(spacing: 6) {
-                    Image(systemName: "lock.fill")
-                        .font(.system(size: 10))
-                        .foregroundStyle(.secondary)
-                    Text("Encryption: ChaCha20-256 + Argon2id")
-                        .font(.system(size: 11))
-                        .foregroundStyle(.secondary)
-                }
-                HStack(spacing: 6) {
-                    Image(systemName: "externaldrive")
-                        .font(.system(size: 10))
-                        .foregroundStyle(.secondary)
-                    Text("Format: KDBX 4 (KeePass compatible)")
-                        .font(.system(size: 11))
-                        .foregroundStyle(.secondary)
-                }
+                Text("Created by Luis Maumejean G.")
+                    .font(.system(size: 12, weight: .medium))
+                Text("LEMG-lab \u{00B7} Swiss Tech Corp AG")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
             }
 
-            Spacer().frame(height: 24)
+            Spacer().frame(height: 16)
+
+            VStack(spacing: 4) {
+                Text("Built with Rust + SwiftUI")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+                Text("Encryption: ChaCha20-256 + Argon2id (1GB)")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+                Text("Format: KDBX 4.x (KeePass compatible)")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+            }
+
+            Spacer().frame(height: 16)
+
+            Link("github.com/LEMG-lab/smaug", destination: URL(string: "https://github.com/LEMG-lab/smaug")!)
+                .font(.system(size: 11))
+                .foregroundStyle(Color.citadelAccent)
+
+            Spacer().frame(height: 16)
+
+            VStack(spacing: 2) {
+                Text("\u{00A9} 2026 Luis Maumejean G. All rights reserved.")
+                    .font(.system(size: 10))
+                    .foregroundStyle(.tertiary)
+                Text("MIT License")
+                    .font(.system(size: 10))
+                    .foregroundStyle(.tertiary)
+            }
+
+            Spacer().frame(height: 20)
 
             Button("OK") { dismiss() }
                 .buttonStyle(.borderedProminent)
@@ -762,6 +766,6 @@ struct AboutView: View {
 
             Spacer().frame(height: 20)
         }
-        .frame(width: 320, height: 380)
+        .frame(width: 340, height: 440)
     }
 }

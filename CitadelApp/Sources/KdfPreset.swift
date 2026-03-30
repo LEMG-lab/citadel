@@ -38,7 +38,7 @@ public enum KdfPreset: String, CaseIterable, Identifiable {
     public var parallelism: UInt32 { 4 }
 
     /// UserDefaults key.
-    private static let defaultsKey = "citadel.kdfPreset"
+    private static let defaultsKey = "smaug.kdfPreset"
 
     /// Load saved preset (defaults to .maximum).
     public static var saved: KdfPreset {

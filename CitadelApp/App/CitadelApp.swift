@@ -22,6 +22,7 @@ extension Notification.Name {
     static let citadelCopyPassword = Notification.Name("citadelCopyPassword")
     static let citadelCopyUsername = Notification.Name("citadelCopyUsername")
     static let citadelOpenEmergency = Notification.Name("citadelOpenEmergency")
+    static let citadelShowAbout = Notification.Name("citadelShowAbout")
 }
 
 // MARK: - Appearance environment key
@@ -51,7 +52,7 @@ struct CitadelApplication: App {
     }
 
     var body: some Scene {
-        WindowGroup("Citadel") {
+        WindowGroup("Smaug") {
             ContentView()
                 .environment(appState)
                 .environment(\.appearanceMode, $appearanceMode)
@@ -75,6 +76,13 @@ struct CitadelCommands: Commands {
     @FocusedValue(\.appState) private var appState
 
     var body: some Commands {
+        // About Smaug in the app menu
+        CommandGroup(replacing: .appInfo) {
+            Button("About Smaug") {
+                NotificationCenter.default.post(name: .citadelShowAbout, object: nil)
+            }
+        }
+
         // Replace "New" with "New Entry"
         CommandGroup(replacing: .newItem) {
             Button("New Entry") {
@@ -104,7 +112,7 @@ struct CitadelCommands: Commands {
 
         // Help menu
         CommandGroup(replacing: .help) {
-            Button("Citadel User Guide") {
+            Button("Smaug User Guide") {
                 let guideURL: URL
                 // Check repo location first, then bundle
                 let repoPath = (ProcessInfo.processInfo.environment["HOME"] ?? NSHomeDirectory())

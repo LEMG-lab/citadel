@@ -1,4 +1,4 @@
-# Citadel
+# Smaug
 
 A personal password vault for macOS with a Rust crypto core and native SwiftUI interface. KDBX 4.x format. Local only. No cloud. No account. No subscription.
 
@@ -70,13 +70,13 @@ swift run Citadel
 
 Or open `CitadelApp/Package.swift` in Xcode and run the `Citadel` scheme.
 
-### Build Citadel.app with hardened runtime (recommended)
+### Build Smaug.app with hardened runtime (recommended)
 
 ```bash
 ./scripts/build-app.sh
 ```
 
-This builds Rust + Swift in release mode, creates `Citadel.app`, and signs it with hardened runtime (ad-hoc). Hardened runtime blocks debugger attachment, dylib injection, and DYLD environment variables. Open with `open Citadel.app` or drag to `/Applications`.
+This builds Rust + Swift in release mode, creates `Smaug.app`, and signs it with hardened runtime (ad-hoc). Hardened runtime blocks debugger attachment, dylib injection, and DYLD environment variables. Open with `open Smaug.app` or drag to `/Applications`.
 
 ### Reproducible build with manifest
 
@@ -84,11 +84,11 @@ This builds Rust + Swift in release mode, creates `Citadel.app`, and signs it wi
 ./scripts/reproducible-build.sh
 ```
 
-This builds with `cargo build --release --locked` (exact dependency versions from Cargo.lock), creates `Citadel.app`, signs it with hardened runtime, and writes `build-manifest.json` containing toolchain versions, git commit, and SHA-256 checksums. To verify a build:
+This builds with `cargo build --release --locked` (exact dependency versions from Cargo.lock), creates `Smaug.app`, signs it with hardened runtime, and writes `build-manifest.json` containing toolchain versions, git commit, and SHA-256 checksums. To verify a build:
 
 ```bash
 cat build-manifest.json                              # check recorded checksums
-shasum -a 256 Citadel.app/Contents/MacOS/Citadel     # compare binary hash
+shasum -a 256 Smaug.app/Contents/MacOS/Smaug         # compare binary hash
 ```
 
 ### Run tests
@@ -114,7 +114,7 @@ See [SECURITY.md](SECURITY.md) for the full threat model, accepted limitations, 
 
 ## Escape hatch
 
-If Citadel ever stops working, open `vault.kdbx` with [KeePassXC](https://keepassxc.org/) (free, open source, cross-platform) or [Strongbox](https://strongboxsafe.com/) using your master password. No additional software or keys are needed.
+If Smaug ever stops working, open `vault.kdbx` with [KeePassXC](https://keepassxc.org/) (free, open source, cross-platform) or [Strongbox](https://strongboxsafe.com/) using your master password. No additional software or keys are needed.
 
 ## Development
 

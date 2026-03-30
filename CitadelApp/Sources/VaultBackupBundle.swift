@@ -194,7 +194,7 @@ public enum BackupBundleError: Error, LocalizedError {
 
     public var errorDescription: String? {
         switch self {
-        case .invalidFormat: return "Not a valid Citadel backup file"
+        case .invalidFormat: return "Not a valid Smaug backup file"
         case .missingManifest: return "Backup manifest is missing"
         case .missingFile(let name): return "Missing file in backup: \(name)"
         case .checksumMismatch(let name): return "Checksum mismatch for: \(name)"

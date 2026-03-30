@@ -1,6 +1,6 @@
 #!/bin/bash
 # ============================================================================
-# CITADEL HEALTH CHECK — runs daily, alerts only on problems
+# SMAUG HEALTH CHECK — runs daily, alerts only on problems
 # ============================================================================
 # Install: bash ~/Projects/citadel/scripts/install-healthcheck.sh
 # Manual:  bash ~/Projects/citadel/scripts/healthcheck.sh
@@ -24,7 +24,7 @@ problem() { PROBLEMS=$((PROBLEMS+1)); log "PROBLEM: $1"; }
 warning() { WARNINGS=$((WARNINGS+1)); log "WARNING: $1"; }
 ok() { log "OK: $1"; }
 
-log "=== Citadel health check ==="
+log "=== Smaug health check ==="
 
 # 1. Vault file exists
 if [ ! -f "$VAULT_FILE" ]; then
@@ -131,23 +131,23 @@ LAST_MOD=$(stat -f '%m' "$VAULT_FILE" 2>/dev/null || stat -c '%Y' "$VAULT_FILE" 
 NOW=$(date +%s)
 DAYS_SINCE=$(( (NOW - LAST_MOD) / 86400 ))
 if [ "$DAYS_SINCE" -gt 30 ]; then
-    warning "vault not modified in $DAYS_SINCE days (is Citadel being used?)"
+    warning "vault not modified in $DAYS_SINCE days (is Smaug being used?)"
 fi
 
 # Result
 log "=== Result: $PROBLEMS problems, $WARNINGS warnings ==="
 
 if [ "$PROBLEMS" -gt 0 ]; then
-    echo "CITADEL HEALTH CHECK: $PROBLEMS PROBLEM(S) DETECTED" > "$ALERT_FILE"
+    echo "SMAUG HEALTH CHECK: $PROBLEMS PROBLEM(S) DETECTED" > "$ALERT_FILE"
     echo "Check log: $LOG" >> "$ALERT_FILE"
     grep "PROBLEM:" "$LOG" >> "$ALERT_FILE"
 
     # Show macOS notification
-    osascript -e "display notification \"$PROBLEMS problem(s) found. Check $LOG\" with title \"Citadel Health Check\" subtitle \"Action required\"" 2>/dev/null || true
+    osascript -e "display notification \"$PROBLEMS problem(s) found. Check $LOG\" with title \"Smaug Health Check\" subtitle \"Action required\"" 2>/dev/null || true
 
     # Also print to stdout if run manually
     echo ""
-    echo "CITADEL: $PROBLEMS PROBLEM(S) DETECTED"
+    echo "SMAUG: $PROBLEMS PROBLEM(S) DETECTED"
     grep "PROBLEM:" "$LOG" | sed 's/^.*PROBLEM: /  /'
     echo ""
     echo "Log: $LOG"
@@ -155,11 +155,11 @@ if [ "$PROBLEMS" -gt 0 ]; then
 elif [ "$WARNINGS" -gt 0 ]; then
     rm -f "$ALERT_FILE"
     echo ""
-    echo "CITADEL: OK ($WARNINGS minor warning(s))"
+    echo "SMAUG: OK ($WARNINGS minor warning(s))"
     grep "WARNING:" "$LOG" | sed 's/^.*WARNING: /  /'
     exit 0
 else
     rm -f "$ALERT_FILE"
-    echo "CITADEL: ALL CLEAR"
+    echo "SMAUG: ALL CLEAR"
     exit 0
 fi

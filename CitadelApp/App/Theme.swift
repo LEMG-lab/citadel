@@ -25,7 +25,7 @@ enum AppearanceMode: String, CaseIterable, Identifiable {
         }
     }
 
-    private static let defaultsKey = "citadel.appearanceMode"
+    private static let defaultsKey = "smaug.appearanceMode"
 
     static var saved: AppearanceMode {
         let raw = UserDefaults.standard.string(forKey: defaultsKey) ?? "system"

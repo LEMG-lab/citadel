@@ -31,7 +31,7 @@ public enum SecureShare {
     }
 
     /// Create an encrypted share link.
-    /// Format: citadel://share#BASE64_KEY#BASE64_ENCRYPTED
+    /// Format: smaug://share#BASE64_KEY#BASE64_ENCRYPTED
     public static func createShareLink(entry: SharedEntry) throws -> String {
         let json = try JSONEncoder().encode(entry)
         let key = SymmetricKey(size: .bits256)
@@ -42,17 +42,17 @@ public enum SecureShare {
         let keyB64 = keyData.base64EncodedString()
         let dataB64 = combined.base64EncodedString()
 
-        return "citadel://share#\(keyB64)#\(dataB64)"
+        return "smaug://share#\(keyB64)#\(dataB64)"
     }
 
     /// Parse and decrypt a share link.
     public static func decryptShareLink(_ link: String) throws -> SharedEntry {
         let stripped = link.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard stripped.hasPrefix("citadel://share#") else {
+        guard stripped.hasPrefix("smaug://share#") else {
             throw ShareError.invalidFormat
         }
 
-        let payload = String(stripped.dropFirst("citadel://share#".count))
+        let payload = String(stripped.dropFirst("smaug://share#".count))
         let parts = payload.split(separator: "#", maxSplits: 1)
         guard parts.count == 2 else {
             throw ShareError.invalidFormat

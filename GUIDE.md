@@ -1,4 +1,4 @@
-# Citadel — Guia completa del usuario
+# Smaug — Guia completa del usuario
 
 > Version 1.4 | Ultima actualizacion: marzo 2026
 
@@ -30,13 +30,13 @@
 
 ## 1. Primeros pasos
 
-### Que es Citadel
+### Que es Smaug
 
-Citadel es un gestor de passwords local para macOS. Tus passwords se guardan en un archivo `.kdbx` (formato KeePass) encriptado en tu Mac — nunca en la nube, nunca en servidores externos. Tu eres dueno de tus datos.
+Smaug es un gestor de passwords local para macOS. Tus passwords se guardan en un archivo `.kdbx` (formato KeePass) encriptado en tu Mac — nunca en la nube, nunca en servidores externos. Tu eres dueno de tus datos.
 
 ### Crear tu primer vault
 
-1. Abre Citadel desde `/Applications/Citadel.app`
+1. Abre Smaug desde `/Applications/Smaug.app`
 2. La primera vez veras la pantalla de creacion de vault
 3. Escribe un **master password** — este es el password que protege todos los demas
 4. Opcionalmente, agrega un **key file** (un archivo adicional que se necesita junto con el password)
@@ -46,7 +46,7 @@ El vault se crea en `~/.citadel/personal.kdbx` por defecto.
 
 ### Que es el master password
 
-Es la unica contrasena que necesitas memorizar. Todos tus passwords estan protegidos detras de ella. Si la olvidas, **no hay forma de recuperar tus datos** — Citadel no tiene servidores ni mecanismo de recuperacion remoto.
+Es la unica contrasena que necesitas memorizar. Todos tus passwords estan protegidos detras de ella. Si la olvidas, **no hay forma de recuperar tus datos** — Smaug no tiene servidores ni mecanismo de recuperacion remoto.
 
 **Tips para un buen master password:**
 
@@ -59,7 +59,7 @@ Es la unica contrasena que necesitas memorizar. Todos tus passwords estan proteg
 
 KDF significa **Key Derivation Function** — es el algoritmo que convierte tu master password en la llave de encriptacion.
 
-Citadel usa **Argon2id**, considerado el mejor KDF disponible actualmente. Tiene tres parametros:
+Smaug usa **Argon2id**, considerado el mejor KDF disponible actualmente. Tiene tres parametros:
 
 | Preset | Memoria | Iteraciones | Paralelismo |
 |---------|---------|-------------|-------------|
@@ -79,11 +79,11 @@ Para cambiar el preset: **Settings > KDF Strength** y selecciona el nivel desead
 
 ### Que es
 
-Touch ID en Citadel te permite desbloquear tu vault con tu huella digital en lugar de escribir el master password cada vez.
+Touch ID en Smaug te permite desbloquear tu vault con tu huella digital en lugar de escribir el master password cada vez.
 
 ### Como funciona internamente
 
-Citadel NO usa el Keychain de Apple. Usa un sistema basado en archivos:
+Smaug NO usa el Keychain de Apple. Usa un sistema basado en archivos:
 
 1. Al activar Touch ID, genera un **nonce** aleatorio
 2. Encripta tu master password usando XOR con una llave derivada del nonce + identificador unico del dispositivo
@@ -99,7 +99,7 @@ Citadel NO usa el Keychain de Apple. Usa un sistema basado en archivos:
 
 ### Cada cuanto pide el password completo
 
-Citadel requiere tu master password completo **cada 72 horas** como medida de seguridad. Esto asegura que:
+Smaug requiere tu master password completo **cada 72 horas** como medida de seguridad. Esto asegura que:
 
 - No olvides tu master password por depender exclusivamente de Touch ID
 - Si alguien tiene acceso fisico a tu Mac, la ventana de vulnerabilidad es limitada
@@ -114,7 +114,7 @@ Cuando se cumplen las 72 horas, Touch ID dejara de funcionar temporalmente y ver
 
 ### Auto-trigger
 
-Cuando abres Citadel y Touch ID esta activado, automaticamente intenta autenticarte con tu huella despues de 0.5 segundos. No necesitas hacer clic — solo pon tu dedo en el sensor.
+Cuando abres Smaug y Touch ID esta activado, automaticamente intenta autenticarte con tu huella despues de 0.5 segundos. No necesitas hacer clic — solo pon tu dedo en el sensor.
 
 ### Cuando se desactiva automaticamente
 
@@ -154,7 +154,7 @@ Hay varias formas:
 
 - **Desde el detalle**: Haz clic en el icono de copiar (dos cuadros) junto al campo de password
 - **Atajo de teclado**: Selecciona el entry y presiona `Cmd+Shift+C`
-- **Desde la barra de menu**: Haz clic en el icono de Citadel en la barra de menu y selecciona el entry
+- **Desde la barra de menu**: Haz clic en el icono de Smaug en la barra de menu y selecciona el entry
 
 El password se copia al portapapeles y **se borra automaticamente** despues del tiempo configurado (15 segundos por defecto, configurable de 5 a 60 segundos en Settings).
 
@@ -169,7 +169,7 @@ El password esta oculto por defecto (se muestra como puntos). Para verlo, **mant
 
 ### Buscar entries
 
-Usa el campo de busqueda en la barra lateral. Citadel usa fuzzy search — no necesitas escribir el nombre exacto. Ver [seccion 9](#9-fuzzy-search) para mas detalles.
+Usa el campo de busqueda en la barra lateral. Smaug usa fuzzy search — no necesitas escribir el nombre exacto. Ver [seccion 9](#9-fuzzy-search) para mas detalles.
 
 ### Tips
 
@@ -326,11 +326,11 @@ Los Custom Fields son campos adicionales que puedes agregar a cualquier entry. C
 
 ### Que es
 
-TOTP (Time-based One-Time Password) es el sistema de autenticacion de dos factores que genera codigos de 6 digitos que cambian cada 30 segundos. Es lo que apps como Google Authenticator o Authy hacen — pero Citadel lo tiene integrado.
+TOTP (Time-based One-Time Password) es el sistema de autenticacion de dos factores que genera codigos de 6 digitos que cambian cada 30 segundos. Es lo que apps como Google Authenticator o Authy hacen — pero Smaug lo tiene integrado.
 
 ### Para que sirve
 
-En lugar de abrir otra app para obtener el codigo 2FA, lo tienes junto con tus credenciales en Citadel. Copias el password, copias el codigo TOTP, y listo.
+En lugar de abrir otra app para obtener el codigo 2FA, lo tienes junto con tus credenciales en Smaug. Copias el password, copias el codigo TOTP, y listo.
 
 ### Como agregar TOTP a un entry
 
@@ -381,7 +381,7 @@ Los favorites son entries marcados con una estrella para acceso rapido. Aparecen
 
 #### Para que sirve
 - Los favoritos aparecen primero en la lista lateral
-- En el **menu bar** (icono de Citadel en la barra superior), los favoritos son los entries que se muestran directamente — un clic y el password se copia
+- En el **menu bar** (icono de Smaug en la barra superior), los favoritos son los entries que se muestran directamente — un clic y el password se copia
 - Marca como favoritos los 5-10 passwords que usas a diario
 
 ### Folders (grupos)
@@ -415,7 +415,7 @@ Fuzzy search es un sistema de busqueda inteligente que encuentra entries incluso
 
 ### Como busca
 
-Citadel busca en multiples campos de cada entry:
+Smaug busca en multiples campos de cada entry:
 
 - Titulo
 - Username
@@ -490,7 +490,7 @@ El puntaje empieza en 100 y se restan puntos por cada problema:
 
 #### 2. Weak Passwords (rojo)
 - **Que significa:** El password es corto, predecible, o no tiene suficiente variedad de caracteres
-- **Que hacer:** Genera un nuevo password usando el generador de Citadel (minimo 16 caracteres)
+- **Que hacer:** Genera un nuevo password usando el generador de Smaug (minimo 16 caracteres)
 
 #### 3. Reused Passwords (naranja)
 - **Que significa:** Dos o mas entries usan el mismo password
@@ -526,19 +526,19 @@ El puntaje empieza en 100 y se restan puntos por cada problema:
 
 ### Que es
 
-HIBP (Have I Been Pwned) es un servicio creado por Troy Hunt que recopila datos de filtraciones de seguridad publicas. Citadel puede verificar si tus passwords aparecen en alguna filtracion conocida.
+HIBP (Have I Been Pwned) es un servicio creado por Troy Hunt que recopila datos de filtraciones de seguridad publicas. Smaug puede verificar si tus passwords aparecen en alguna filtracion conocida.
 
 ### Es seguro
 
-**Si.** Citadel usa el metodo de **k-anonymity** — tus passwords nunca salen de tu Mac.
+**Si.** Smaug usa el metodo de **k-anonymity** — tus passwords nunca salen de tu Mac.
 
 ### Como funciona k-anonymity (paso a paso)
 
-1. Citadel toma tu password (ej. `password123`)
+1. Smaug toma tu password (ej. `password123`)
 2. Calcula el hash SHA-1: `CBFDAC6008F9CAB4083784CBD1874F76618D2A97`
 3. Envia **solo los primeros 5 caracteres** (`CBFDA`) al servidor de HIBP
 4. HIBP responde con **todos** los hashes que empiezan con esos 5 caracteres (cientos o miles)
-5. Citadel busca **localmente** si el resto del hash coincide
+5. Smaug busca **localmente** si el resto del hash coincide
 6. Si coincide, tu password fue comprometido
 
 **Lo que el servidor de HIBP ve:** Solo `CBFDA` — que es compartido por miles de passwords diferentes. No puede saber cual es el tuyo.
@@ -549,9 +549,9 @@ HIBP (Have I Been Pwned) es un servicio creado por Troy Hunt que recopila datos 
 
 1. Abre **Settings > Password Health Report** (Watchtower)
 2. En la seccion "Breached Passwords", haz clic en **"Check for Breaches"**
-3. La primera vez, Citadel pide tu **consentimiento** explicando que se enviaran hashes parciales
+3. La primera vez, Smaug pide tu **consentimiento** explicando que se enviaran hashes parciales
 4. Acepta si estas de acuerdo
-5. Citadel verifica cada password (con 200ms de pausa entre cada uno para no sobrecargar el servidor)
+5. Smaug verifica cada password (con 200ms de pausa entre cada uno para no sobrecargar el servidor)
 6. Los resultados muestran cuantas veces aparecio cada password en filtraciones
 
 ### Cache
@@ -574,9 +574,9 @@ Secure Sharing te permite compartir credenciales con otra persona de forma encri
 
 ### Como funciona tecnicamente
 
-1. Citadel selecciona los campos que quieres compartir
+1. Smaug selecciona los campos que quieres compartir
 2. Los encripta con **ChaChaPoly** (encriptacion autenticada de 256 bits) usando una llave aleatoria
-3. Genera un link en formato `citadel://share#LLAVE#DATOS_ENCRIPTADOS`
+3. Genera un link en formato `smaug://share#LLAVE#DATOS_ENCRIPTADOS`
 4. La llave y los datos van **juntos en el link** — cualquiera que tenga el link puede descifrarlo
 
 ### Como enviar credenciales
@@ -591,9 +591,9 @@ Secure Sharing te permite compartir credenciales con otra persona de forma encri
 
 ### Como recibir credenciales
 
-1. En Citadel, ve al menu de acciones (tres puntos o "More") > **Receive Shared Entry**
+1. En Smaug, ve al menu de acciones (tres puntos o "More") > **Receive Shared Entry**
 2. Pega el link que te enviaron
-3. Citadel descifra los datos y muestra los campos
+3. Smaug descifra los datos y muestra los campos
 4. Puedes ver la informacion y opcionalmente **guardarla como un nuevo entry** en tu vault
 
 ### Consideraciones de seguridad
@@ -616,11 +616,11 @@ Secure Sharing te permite compartir credenciales con otra persona de forma encri
 
 ### Que es
 
-Citadel soporta multiples vaults — archivos `.kdbx` independientes, cada uno con su propio master password. Esto te permite separar tus credenciales personales de las de trabajo, o tener vaults compartidos con equipo.
+Smaug soporta multiples vaults — archivos `.kdbx` independientes, cada uno con su propio master password. Esto te permite separar tus credenciales personales de las de trabajo, o tener vaults compartidos con equipo.
 
 ### Vaults por defecto
 
-La primera vez que abres Citadel, se crean dos vaults:
+La primera vez que abres Smaug, se crean dos vaults:
 
 - **Personal** (`~/.citadel/personal.kdbx`) — para tus credenciales personales
 - **Work** (`~/.citadel/work.kdbx`) — para credenciales laborales
@@ -644,7 +644,7 @@ Si existia un vault legacy (`vault.kdbx`), se registra automaticamente como "Per
 
 ### Como renombrar o eliminar un vault del registro
 
-Los vaults se gestionan desde el VaultRegistry. Eliminar un vault del registro **no borra el archivo** — solo lo quita de la lista de Citadel. Puedes volver a importarlo despues.
+Los vaults se gestionan desde el VaultRegistry. Eliminar un vault del registro **no borra el archivo** — solo lo quita de la lista de Smaug. Puedes volver a importarlo despues.
 
 ### Tips
 
@@ -658,7 +658,7 @@ Los vaults se gestionan desde el VaultRegistry. Eliminar un vault del registro *
 
 ### Tipos de backup
 
-Citadel ofrece **tres** niveles de proteccion:
+Smaug ofrece **tres** niveles de proteccion:
 
 #### 1. Backup normal (archivo .kdbx)
 
@@ -696,7 +696,7 @@ Citadel ofrece **tres** niveles de proteccion:
 
 ### Recovery Sheet
 
-- **Que es:** Un documento imprimible con instrucciones para abrir tu vault en caso de que Citadel no este disponible
+- **Que es:** Un documento imprimible con instrucciones para abrir tu vault en caso de que Smaug no este disponible
 - **Como generarlo:** Settings > **Print Recovery Sheet**
 - **Que incluye:**
   - La ruta de tu archivo vault
@@ -719,16 +719,16 @@ Citadel ofrece **tres** niveles de proteccion:
 
 ### Que es
 
-Citadel pone un icono en la barra de menu de macOS (junto al reloj, WiFi, etc.) para acceso rapido a tus passwords sin abrir la ventana principal.
+Smaug pone un icono en la barra de menu de macOS (junto al reloj, WiFi, etc.) para acceso rapido a tus passwords sin abrir la ventana principal.
 
 ### Que muestra el icono
 
-- **Si el vault esta bloqueado:** Muestra "Citadel — Locked" con opcion de "Open Citadel"
+- **Si el vault esta bloqueado:** Muestra "Smaug — Locked" con opcion de "Open Smaug"
 - **Si el vault esta desbloqueado:** Muestra tus entries organizados
 
 ### Como copiar un password rapido
 
-1. Haz clic en el icono de Citadel en la barra de menu
+1. Haz clic en el icono de Smaug en la barra de menu
 2. **Favoritos** aparecen primero — haz clic en uno para copiar su password instantaneamente
 3. Para entries no favoritos, ve a **"All Entries"** > selecciona el entry > **"Copy Password"** o **"Copy Username"**
 
@@ -738,7 +738,7 @@ Citadel pone un icono en la barra de menu de macOS (junto al reloj, WiFi, etc.) 
 - **Copiar password o username** desde submenus (todos los entries)
 - **Cambiar vault** (si tienes multiples vaults)
 - **Bloquear vault** sin abrir la ventana
-- **Abrir Citadel** (trae la ventana principal al frente)
+- **Abrir Smaug** (trae la ventana principal al frente)
 
 ### Limite
 
@@ -774,7 +774,7 @@ Se muestran hasta **20 entries** en favoritos y 20 en "All Entries" para mantene
 
 ## 17. Seguridad
 
-### Que protege Citadel
+### Que protege Smaug
 
 - **Passwords en reposo:** Encriptados con AES-256 en formato KDBX 4, protegidos con Argon2id
 - **Passwords en memoria:** Limpieza activa de memoria al bloquear (`.resetBytes`), prevencion de core dumps
@@ -787,18 +787,18 @@ Se muestran hasta **20 entries** en favoritos y 20 en "All Entries" para mantene
 - **Recuperacion de crash:** Si el vault se corrompe durante un save, se recupera automaticamente del `.prev` o `.tmp`
 - **Deteccion de nube:** Advertencia si el vault esta en un directorio sincronizado a la nube
 
-### Que NO protege Citadel
+### Que NO protege Smaug
 
-- **Keyloggers:** Si tu Mac tiene malware que captura lo que escribes, Citadel no puede prevenir eso
+- **Keyloggers:** Si tu Mac tiene malware que captura lo que escribes, Smaug no puede prevenir eso
 - **Acceso fisico prolongado:** Si alguien tiene acceso fisico a tu Mac desbloqueado por tiempo indefinido, puede eventualmente extraer datos de la memoria
-- **Ingenieria social:** Si alguien te convence de darle tu master password, Citadel no puede ayudarte
+- **Ingenieria social:** Si alguien te convence de darle tu master password, Smaug no puede ayudarte
 - **Backup passwords debiles:** Si tu backup password del `.ctdl` es debil, el backup es vulnerable
-- **Screenshots por malware:** Aunque Citadel intenta prevenir capturas de pantalla, malware con permisos de accesibilidad podria evadirlo
-- **Sincronizacion de nube:** Citadel advierte pero no impide guardar el vault en carpetas sincronizadas
+- **Screenshots por malware:** Aunque Smaug intenta prevenir capturas de pantalla, malware con permisos de accesibilidad podria evadirlo
+- **Sincronizacion de nube:** Smaug advierte pero no impide guardar el vault en carpetas sincronizadas
 
 ### Comparacion con otros gestores
 
-| Caracteristica | Citadel | 1Password | Bitwarden |
+| Caracteristica | Smaug | 1Password | Bitwarden |
 |----------------|---------|-----------|-----------|
 | Datos almacenados | Solo local | Nube propia | Nube/self-host |
 | Formato | KDBX 4 (estandar) | Propietario | Propietario |
@@ -810,7 +810,7 @@ Se muestran hasta **20 entries** en favoritos y 20 en "All Entries" para mantene
 | Recuperacion si la empresa cierra | No aplica (local) | Incierto | Export posible |
 | Auditoria del codigo | Posible (local) | No posible | Posible |
 
-**En resumen:** Citadel es para usuarios que quieren control total sobre sus datos. 1Password y Bitwarden son mejores si necesitas sincronizacion automatica entre dispositivos. Citadel es mejor si priorizas soberania de datos y no dependencia de servicios externos.
+**En resumen:** Smaug es para usuarios que quieren control total sobre sus datos. 1Password y Bitwarden son mejores si necesitas sincronizacion automatica entre dispositivos. Smaug es mejor si priorizas soberania de datos y no dependencia de servicios externos.
 
 ---
 
@@ -818,7 +818,7 @@ Se muestran hasta **20 entries** en favoritos y 20 en "All Entries" para mantene
 
 ### Por que importa
 
-Tu vault de Citadel es un archivo `.kdbx` estandar. Esto significa que **no dependes de Citadel para acceder a tus datos**. Cualquier app compatible con KDBX 4 puede abrirlo.
+Tu vault de Smaug es un archivo `.kdbx` estandar. Esto significa que **no dependes de Smaug para acceder a tus datos**. Cualquier app compatible con KDBX 4 puede abrirlo.
 
 ### Como abrir tu vault en KeePassXC (Mac/Windows/Linux)
 
@@ -856,8 +856,8 @@ Si quieres tener el vault actualizado en tu iPhone:
 
 ### Tips
 
-- Imprime el **Recovery Sheet** de Citadel para tener instrucciones paso a paso siempre a mano
-- KeePassXC es tu "plan B" definitivo — si algo pasa con Citadel, tus datos estan a salvo
+- Imprime el **Recovery Sheet** de Smaug para tener instrucciones paso a paso siempre a mano
+- KeePassXC es tu "plan B" definitivo — si algo pasa con Smaug, tus datos estan a salvo
 - Verifica al menos una vez que puedes abrir tu vault en KeePassXC
 
 ---
@@ -866,7 +866,7 @@ Si quieres tener el vault actualizado en tu iPhone:
 
 ### Olvide mi master password
 
-**No hay forma de recuperarlo.** Citadel no tiene servidores ni mecanismo de reset.
+**No hay forma de recuperarlo.** Smaug no tiene servidores ni mecanismo de reset.
 
 **Que puedes intentar:**
 
@@ -883,15 +883,15 @@ Si quieres tener el vault actualizado en tu iPhone:
 
 ### El vault no abre (archivo corrupto)
 
-1. **Recuperacion automatica:** Citadel intenta automaticamente restaurar desde `.prev` o `.tmp` si el archivo principal esta corrupto
+1. **Recuperacion automatica:** Smaug intenta automaticamente restaurar desde `.prev` o `.tmp` si el archivo principal esta corrupto
 2. **Backup manual:** Si hay un archivo `.kdbx.prev` en `~/.citadel/`, puedes renombrarlo a `.kdbx` manualmente:
    ```bash
    cd ~/.citadel
    cp personal.kdbx personal.kdbx.broken
    cp personal.kdbx.prev personal.kdbx
    ```
-3. **Desde backup:** Si tienes un Full Backup (`.ctdl`), restauralo desde Citadel > More Actions > Restore from Backup
-4. **KeePassXC:** Intenta abrir el archivo en KeePassXC — a veces puede leer archivos que Citadel no puede
+3. **Desde backup:** Si tienes un Full Backup (`.ctdl`), restauralo desde Smaug > More Actions > Restore from Backup
+4. **KeePassXC:** Intenta abrir el archivo en KeePassXC — a veces puede leer archivos que Smaug no puede
 
 ### Touch ID no funciona
 
@@ -903,7 +903,7 @@ Si quieres tener el vault actualizado en tu iPhone:
 
 ### El vault esta en una carpeta sincronizada a la nube
 
-Citadel muestra una advertencia si detecta que `~/.citadel/` esta dentro de:
+Smaug muestra una advertencia si detecta que `~/.citadel/` esta dentro de:
 
 - iCloud Drive (`~/Library/Mobile Documents`)
 - Dropbox (`~/Dropbox`)
@@ -916,7 +916,7 @@ Citadel muestra una advertencia si detecta que `~/.citadel/` esta dentro de:
 
 ### Las passwords expiradas aparecen al abrir
 
-Esto es una funcion de seguridad. Citadel revisa si alguna entry tiene fecha de expiracion vencida o proxima (7 dias) y te alerta al desbloquear.
+Esto es una funcion de seguridad. Smaug revisa si alguna entry tiene fecha de expiracion vencida o proxima (7 dias) y te alerta al desbloquear.
 
 **Que hacer:** Revisa cada entry mencionado y actualiza el password o extiende la fecha de expiracion.
 
@@ -949,4 +949,4 @@ Ajusta el timeout en **Settings > Auto-lock timeout** (slider de 1 a 30 minutos)
 
 ---
 
-*Citadel — Tus passwords, tu control.*
+*Smaug — Tus passwords, tu control.*

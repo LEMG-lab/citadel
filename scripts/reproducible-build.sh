@@ -1,18 +1,18 @@
 #!/bin/bash
 set -euo pipefail
 
-# Reproducible build for Citadel.app.
+# Reproducible build for Smaug.app.
 #
 # Records toolchain versions, builds with locked dependencies,
 # creates the .app bundle, computes checksums, and writes
 # build-manifest.json.
 #
 # Usage: ./scripts/reproducible-build.sh
-# Output: ./Citadel.app + ./build-manifest.json
+# Output: ./Smaug.app + ./build-manifest.json
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-APP="$ROOT/Citadel.app"
+APP="$ROOT/Smaug.app"
 MANIFEST="$ROOT/build-manifest.json"
 
 # ---------------------------------------------------------------
@@ -59,12 +59,13 @@ swift build -c release
 # ---------------------------------------------------------------
 # 5. Create .app bundle
 # ---------------------------------------------------------------
-echo "==> Creating Citadel.app bundle..."
+echo "==> Creating Smaug.app bundle..."
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS"
 mkdir -p "$APP/Contents/Resources"
 
-cp "$ROOT/CitadelApp/.build/release/Citadel" "$APP/Contents/MacOS/"
+# Copy binary (Swift target is still named "Citadel"; rename to "Smaug" for the bundle)
+cp "$ROOT/CitadelApp/.build/release/Citadel" "$APP/Contents/MacOS/Smaug"
 cp "$ROOT/CitadelApp/Info.plist" "$APP/Contents/"
 
 # ---------------------------------------------------------------
@@ -80,7 +81,7 @@ codesign --force --options runtime \
 # 7. Compute checksums
 # ---------------------------------------------------------------
 echo "==> Computing checksums..."
-BINARY_SHA256=$(shasum -a 256 "$APP/Contents/MacOS/Citadel" | awk '{print $1}')
+BINARY_SHA256=$(shasum -a 256 "$APP/Contents/MacOS/Smaug" | awk '{print $1}')
 APP_SHA256=$(find "$APP" -type f -print0 | sort -z | xargs -0 shasum -a 256 | shasum -a 256 | awk '{print $1}')
 RUST_LIB_SHA256=$(shasum -a 256 "$ROOT/target/aarch64-apple-darwin/release/libcitadel_core.a" | awk '{print $1}')
 
@@ -116,5 +117,5 @@ echo "Done: $APP"
 echo "Manifest: $MANIFEST"
 echo ""
 echo "To verify a build:"
-echo "  shasum -a 256 Citadel.app/Contents/MacOS/Citadel"
+echo "  shasum -a 256 Smaug.app/Contents/MacOS/Smaug"
 echo "  Expected: $BINARY_SHA256"

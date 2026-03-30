@@ -3,7 +3,8 @@ set -euo pipefail
 
 cd "$(dirname "$0")"
 
-APP_NAME="Citadel"
+APP_NAME="Smaug"
+SWIFT_BINARY_NAME="Citadel"  # Swift executable target is still named Citadel
 APP_BUNDLE="${APP_NAME}.app"
 INSTALL_DIR="/Applications"
 INSTALL_PATH="${INSTALL_DIR}/${APP_BUNDLE}"
@@ -15,7 +16,7 @@ swift package clean
 swift build -c release
 echo "Build OK"
 
-BINARY=".build/arm64-apple-macosx/release/${APP_NAME}"
+BINARY=".build/arm64-apple-macosx/release/${SWIFT_BINARY_NAME}"
 if [ ! -f "$BINARY" ]; then
     echo "ERROR: Binary not found at ${BINARY}"
     exit 1
@@ -39,11 +40,11 @@ cat > "${INSTALL_PATH}/Contents/Info.plist" << 'PLIST'
 <plist version="1.0">
 <dict>
     <key>CFBundleExecutable</key>
-    <string>Citadel</string>
+    <string>Smaug</string>
     <key>CFBundleIdentifier</key>
     <string>com.citadel.app</string>
     <key>CFBundleName</key>
-    <string>Citadel</string>
+    <string>Smaug</string>
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleVersion</key>
@@ -58,7 +59,7 @@ cat > "${INSTALL_PATH}/Contents/Info.plist" << 'PLIST'
 </plist>
 PLIST
 
-# 5. Copy binary
+# 5. Copy binary (rename from Swift target name to app name)
 cp "$BINARY" "${INSTALL_PATH}/Contents/MacOS/${APP_NAME}"
 
 # 6. Sign with --deep

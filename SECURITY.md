@@ -1,6 +1,6 @@
-# Citadel Security Model
+# Smaug Security Model
 
-## What Citadel protects against
+## What Smaug protects against
 - Offline brute force of stolen vault file (Argon2id 256MB, ChaCha20)
 - Data loss from interrupted saves (atomic save pipeline with snapshots)
 - Accidental plaintext exposure (clipboard auto-clear, concealed type, auto-lock, press-and-hold reveal)
@@ -19,7 +19,7 @@
 - Audit trail (file-based audit log with 30-day rotation; logs unlock, lock, entry changes, password changes)
 - Touch ID unlock (biometric-protected wrapping key in Keychain with kSecAccessControlBiometryCurrentSet; encrypted master password blob; 72-hour full re-auth; invalidated on password change or biometric enrollment change)
 
-## What Citadel does NOT protect against
+## What Smaug does NOT protect against
 - A fully compromised endpoint (keylogger, screen recorder, memory dump while unlocked)
 - Clipboard managers that ignore the ConcealedType convention
 - Physical access to an unlocked Mac with the vault open
@@ -39,20 +39,20 @@
 SwiftUI `@State` String variables for passwords (in LockScreenView, ChangePasswordView, EntryEditView) and `VaultEntryDetail.password` as `Data` are not guaranteed to be zeroed on deallocation. Swift provides no mechanism to ensure freed heap memory is overwritten. Passwords may persist in deallocated heap and could be written to swap or hibernation files. This is a fundamental Swift/SwiftUI limitation shared by all Swift-based password managers. The Rust core uses `Zeroizing<Vec<u8>>` which provides reliable zeroing; the Swift side performs explicit `resetBytes` before releasing references, but cannot control what happens after deallocation.
 
 ### Clipboard limitations
-The clipboard auto-clear timer runs in-process. If Citadel is killed (`kill -9`), crashes, or is force-quit, the clipboard is not cleared. Additionally, Universal Clipboard (Handoff) may sync copied passwords to other Apple devices on the same iCloud account for up to 2 minutes. ConcealedType marks the pasteboard item as sensitive, but this does not prevent Universal Clipboard sync. Users concerned about this should disable Handoff in System Settings > General > AirDrop & Handoff.
+The clipboard auto-clear timer runs in-process. If Smaug is killed (`kill -9`), crashes, or is force-quit, the clipboard is not cleared. Additionally, Universal Clipboard (Handoff) may sync copied passwords to other Apple devices on the same iCloud account for up to 2 minutes. ConcealedType marks the pasteboard item as sensitive, but this does not prevent Universal Clipboard sync. Users concerned about this should disable Handoff in System Settings > General > AirDrop & Handoff.
 
 ### Time Machine and historical vault files
 Time Machine backs up `vault.kdbx` and `.prev` snapshot files. Auto-backup files created during password changes (`vault-backup-*.kdbx`) are encrypted with the old password and automatically deleted after a successful password change. If the change fails, the backup is used for rollback and then removed. Historical Time Machine snapshots may still contain older vault versions with weaker passwords. Users should exclude `~/.citadel/` from Time Machine if this concerns them (System Settings > Time Machine > Options > Exclude).
 
 ### AutoType data loss
-The `sanitize_autotype` function drops AutoType configuration blocks that contain only default settings to work around a keepass-rs serialization bug (it writes `DataTransferObfuscation` as `"True"`/`"False"` but KeePassXC expects `0`/`1`). AutoType blocks with custom associations or custom sequences are preserved as-is. This means: if you have entries with default AutoType settings and edit them in Citadel, the AutoType block will be removed on save. Custom AutoType configurations (associations, custom sequences) are preserved but may cause KeePassXC to show a warning.
+The `sanitize_autotype` function drops AutoType configuration blocks that contain only default settings to work around a keepass-rs serialization bug (it writes `DataTransferObfuscation` as `"True"`/`"False"` but KeePassXC expects `0`/`1`). AutoType blocks with custom associations or custom sequences are preserved as-is. This means: if you have entries with default AutoType settings and edit them in Smaug, the AutoType block will be removed on save. Custom AutoType configurations (associations, custom sequences) are preserved but may cause KeePassXC to show a warning.
 
 ### Touch ID limitations
 The biometric wrapping key uses XOR encryption of the master password — the security depends entirely on the Keychain ACL (`kSecAccessControlBiometryCurrentSet`) protecting the wrapping key, not the encryption scheme. If an attacker can bypass the Keychain ACL (e.g., via a macOS kernel exploit), the XOR scheme provides no additional protection. The `biometryCurrentSet` flag invalidates the wrapping key when fingerprints are added or removed, but does not protect against a compromised Secure Enclave. The 72-hour timestamp is stored in UserDefaults (not tamper-proof); an attacker with file access could reset it, but would still need a valid fingerprint to retrieve the wrapping key.
 
 ### Other limitations
 - Master password must be valid UTF-8 (keepass-rs limitation)
-- App Sandbox uses the container directory (`~/Library/Containers/com.lemg-lab.citadel/Data/.citadel/`). Users migrating from an unsandboxed install must import their vault via the lock screen. The sandbox grants `files.user-selected.read-write` for backup export and vault import, `files.bookmarks.app-scope` for security-scoped bookmarks, and `print` for recovery sheets. No network entitlements are granted.
+- App Sandbox uses the container directory (`~/Library/Containers/com.lemg-lab.citadel/Data/.citadel/`). Users migrating from an unsandboxed install must import their vault via the lock screen. The sandbox grants `files.user-selected.read-write` for backup export and vault import, `files.bookmarks.app-scope` for security-scoped bookmarks, and `print` for recovery sheets. No network entitlements are granted. (The bundle identifier `com.lemg-lab.citadel` is retained for backward compatibility.)
 - The keepass-rs crate (v0.10) is pre-1.0 with KDBX4 write support marked as feature-gated
 - Cloud sync detection checks common paths but may not detect all sync services
 
@@ -64,4 +64,4 @@ The biometric wrapping key uses XOR encryption of the master password — the se
 - RNG: SecRandomCopyBytes (Apple hardware entropy) for vault operations, rand::rng() (ChaCha20-based CSPRNG) for password generation
 
 ## Escape hatch
-If Citadel stops working, open vault.kdbx with KeePassXC (free, open source, cross-platform) using your master password (and keyfile, if configured). No additional software is needed.
+If Smaug stops working, open vault.kdbx with KeePassXC (free, open source, cross-platform) using your master password (and keyfile, if configured). No additional software is needed.

@@ -118,8 +118,8 @@ impl VaultState {
         //    serialize as an empty XML tag.  KeePassXC rejects empty tags
         //    for numeric, UUID, and boolean-valued elements.
         let meta = &mut db.meta;
-        meta.generator = Some("Citadel".to_string());
-        meta.database_name = Some("Citadel Vault".to_string());
+        meta.generator = Some("Smaug".to_string());
+        meta.database_name = Some("Smaug Vault".to_string());
         meta.database_name_changed = Some(now);
         meta.database_description = Some(String::new());
         meta.database_description_changed = Some(now);
@@ -241,6 +241,7 @@ impl VaultState {
             url: entry.get_url().unwrap_or("").to_string(),
             notes: entry.get("Notes").unwrap_or("").to_string(),
             otp_uri: entry.get("otp").unwrap_or("").to_string(),
+            // Backward-compatible KDBX custom field prefix
             entry_type: entry.get("Citadel_EntryType").unwrap_or("").to_string(),
             custom_fields: collect_custom_fields(entry),
             expiry_time: entry_expiry_timestamp(entry),
@@ -378,6 +379,7 @@ impl VaultState {
     pub fn set_favorite(&mut self, uuid: uuid::Uuid, favorite: bool) -> Result<(), VaultResult> {
         let entry = self.db.root.entry_by_uuid_mut(uuid)
             .ok_or(VaultResult::InternalError)?;
+        // Backward-compatible KDBX custom field prefix
         if favorite {
             entry.set_unprotected("Citadel_Favorite", "true");
         } else {
@@ -605,6 +607,7 @@ pub struct EntrySummary {
     pub group: String,
     pub entry_type: String,
     /// Comma-separated tags from the Citadel_Tags custom field.
+    /// (Backward-compatible KDBX custom field prefix)
     pub tags: String,
     /// Unix timestamp of expiry. 0 if expiry is not enabled.
     pub expiry_time: i64,
@@ -683,7 +686,7 @@ fn sanitize_for_keepassxc(db: &mut Database) {
     // -- Meta --
     let m = &mut db.meta;
     if m.generator.is_none() {
-        m.generator = Some("Citadel".to_string());
+        m.generator = Some("Smaug".to_string());
     }
     m.database_name.get_or_insert_with(String::new);
     m.database_name_changed.get_or_insert(epoch);
@@ -848,6 +851,8 @@ fn entry_last_modified(entry: &Entry) -> i64 {
 }
 
 /// Standard fields to exclude when collecting custom fields.
+// Backward-compatible KDBX custom field prefix — Citadel_ names are kept for
+// compatibility with existing vault files.
 const STANDARD_FIELDS: &[&str] = &[
     "Title", "UserName", "Password", "URL", "Notes", "otp",
     "Citadel_Favorite", "Citadel_EntryType", "Citadel_Tags",
@@ -957,7 +962,7 @@ mod tests {
         let state2 = VaultState::open(path, pw, None).expect("reopen failed");
         assert_eq!(
             state2.db.meta.database_name.as_deref(),
-            Some("Citadel Vault")
+            Some("Smaug Vault")
         );
     }
 

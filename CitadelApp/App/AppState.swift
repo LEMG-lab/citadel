@@ -100,19 +100,22 @@ final class AppState {
 
     init() {
         let home = FileManager.default.homeDirectoryForCurrentUser
-        let dir = home.appendingPathComponent(".citadel")
+        let dir = home.appendingPathComponent(".smaug")
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         vaultDirectory = dir.path
         auditLogger = AuditLogger(vaultDirectory: dir.path)
-        biometricManager = BiometricManager(directory: dir.path)
 
-        // Multi-vault: set up registry and determine active vault
+        // Determine active vault path first, then init biometric manager with it
         vaultRegistry.ensureDefaults(directory: dir.path)
+        let resolvedPath: String
         if let activePath = vaultRegistry.activeVaultPath {
-            vaultPath = activePath
+            resolvedPath = activePath
         } else {
-            vaultPath = dir.appendingPathComponent("vault.kdbx").path
+            resolvedPath = dir.appendingPathComponent("vault.kdbx").path
         }
+        vaultPath = resolvedPath
+        biometricManager = BiometricManager(directory: dir.path, vaultPath: resolvedPath)
+
         if let info = vaultRegistry.vaults.first(where: { $0.path == vaultPath }) {
             activeVaultName = info.name
         }
@@ -149,6 +152,8 @@ final class AppState {
         vaultPath = info.path
         activeVaultName = info.name
         vaultRegistry.activeVaultPath = info.path
+        biometricManager.configure(forVaultPath: info.path)
+        refreshBiometricState()
         recoverVaultIfNeeded()
     }
 
@@ -191,7 +196,7 @@ final class AppState {
                 return "Your vault is inside a cloud-synced folder (\(syncPath)). "
                     + "This means your vault file is uploaded to remote servers, and concurrent "
                     + "edits from other devices can cause silent data loss. Consider moving your "
-                    + "vault to a non-synced location such as ~/.citadel/."
+                    + "vault to a non-synced location such as ~/.smaug/."
             }
         }
         return nil

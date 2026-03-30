@@ -13,7 +13,7 @@ public enum WindowSecurity {
     /// Apply security settings to a window.
     public static func apply(to window: NSWindow) {
         window.sharingType = .none
-        window.title = "Citadel"
+        window.title = "Smaug"
     }
 
     /// Monitor for new windows (sheets, password generator, etc.) and apply

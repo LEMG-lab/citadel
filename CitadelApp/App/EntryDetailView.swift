@@ -714,7 +714,7 @@ struct EntryDetailView: View {
     private func openAttachment(_ name: String) {
         do {
             let data = try appState.engine.getAttachment(uuid: entryID, name: name)
-            let tmpDir = FileManager.default.temporaryDirectory.appendingPathComponent("citadel-attachments", isDirectory: true)
+            let tmpDir = FileManager.default.temporaryDirectory.appendingPathComponent("smaug-attachments", isDirectory: true)
             try FileManager.default.createDirectory(at: tmpDir, withIntermediateDirectories: true)
             let fileURL = tmpDir.appendingPathComponent(name)
             try data.write(to: fileURL)

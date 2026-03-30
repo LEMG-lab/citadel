@@ -3,9 +3,9 @@
 <plist version="1.0">
 <dict>
     <key>CFBundleName</key>
-    <string>Citadel</string>
+    <string>Smaug</string>
     <key>CFBundleDisplayName</key>
-    <string>Citadel</string>
+    <string>Smaug</string>
     <key>CFBundleIdentifier</key>
     <string>com.lemg-lab.citadel</string>
     <key>CFBundleVersion</key>
@@ -15,7 +15,7 @@
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleExecutable</key>
-    <string>Citadel</string>
+    <string>Smaug</string>
     <key>LSMinimumSystemVersion</key>
     <string>15.0</string>
     <key>NSHighResolutionCapable</key>

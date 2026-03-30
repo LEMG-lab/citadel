@@ -39,7 +39,7 @@ final class StatusBarController: NSObject {
         if let button = statusItem?.button {
             button.image = NSImage(
                 systemSymbolName: "lock.shield",
-                accessibilityDescription: "Citadel"
+                accessibilityDescription: "Smaug"
             )
             button.image?.size = NSSize(width: 18, height: 18)
         }
@@ -75,14 +75,14 @@ final class StatusBarController: NSObject {
 
     /// Build the menu shown when the vault is locked.
     private func buildLockedMenu(_ menu: NSMenu) {
-        let header = NSMenuItem(title: "Citadel \u{2014} Locked", action: nil, keyEquivalent: "")
+        let header = NSMenuItem(title: "Smaug \u{2014} Locked", action: nil, keyEquivalent: "")
         header.isEnabled = false
         menu.addItem(header)
 
         menu.addItem(.separator())
 
         let openItem = NSMenuItem(
-            title: "Open Citadel",
+            title: "Open Smaug",
             action: #selector(openMainWindow),
             keyEquivalent: ""
         )
@@ -120,7 +120,7 @@ final class StatusBarController: NSObject {
             if nonFavorites.count > Self.maxVisibleEntries {
                 submenu.addItem(.separator())
                 let moreItem = NSMenuItem(
-                    title: "Open Citadel to see all\u{2026}",
+                    title: "Open Smaug to see all\u{2026}",
                     action: #selector(openMainWindow),
                     keyEquivalent: ""
                 )
@@ -171,9 +171,9 @@ final class StatusBarController: NSObject {
         lockItem.target = self
         menu.addItem(lockItem)
 
-        // Open Citadel
+        // Open Smaug
         let openItem = NSMenuItem(
-            title: "Open Citadel",
+            title: "Open Smaug",
             action: #selector(openMainWindow),
             keyEquivalent: ""
         )
@@ -278,7 +278,7 @@ final class StatusBarController: NSObject {
 
         // Find an existing content window (skip menu bar panels, popovers, etc.)
         let contentWindow = app.windows.first(where: {
-            $0.canBecomeMain || $0.title == "Citadel"
+            $0.canBecomeMain || $0.title == "Smaug"
         })
 
         if let window = contentWindow {

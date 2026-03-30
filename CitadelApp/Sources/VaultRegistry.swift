@@ -15,8 +15,8 @@ public struct VaultInfo: Codable, Identifiable, Hashable {
 @MainActor
 public final class VaultRegistry {
     public init() {}
-    private static let storageKey = "citadel.knownVaults"
-    private static let activeKey = "citadel.activeVaultPath"
+    private static let storageKey = "smaug.knownVaults"
+    private static let activeKey = "smaug.activeVaultPath"
 
     /// All known vaults.
     public var vaults: [VaultInfo] {

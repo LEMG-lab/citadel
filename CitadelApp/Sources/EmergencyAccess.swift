@@ -6,7 +6,7 @@ import CryptoKit
 /// Layer 2: ChaChaPoly encryption using a separate emergency password.
 public enum EmergencyAccess {
 
-    private static let magic = Data("CTEM".utf8) // Citadel Emergency
+    private static let magic = Data("CTEM".utf8) // Smaug Emergency (legacy magic bytes)
     private static let version: UInt8 = 1
 
     /// Export the current vault as a double-encrypted emergency file.
@@ -58,7 +58,7 @@ public enum EmergencyAccess {
     public static func openToTempFile(at url: URL, emergencyPassword: String) throws -> String {
         let kdbxData = try decrypt(at: url, emergencyPassword: emergencyPassword)
         let tmpDir = FileManager.default.temporaryDirectory
-            .appendingPathComponent("citadel-emergency", isDirectory: true)
+            .appendingPathComponent("smaug-emergency", isDirectory: true)
         try FileManager.default.createDirectory(at: tmpDir, withIntermediateDirectories: true)
         let tmpPath = tmpDir.appendingPathComponent("emergency-vault.kdbx")
         try kdbxData.write(to: tmpPath)
@@ -81,7 +81,7 @@ public enum EmergencyAccessError: Error, LocalizedError {
 
     public var errorDescription: String? {
         switch self {
-        case .invalidFormat: return "Not a valid Citadel emergency file"
+        case .invalidFormat: return "Not a valid Smaug emergency file"
         case .wrongPassword: return "Wrong emergency password"
         }
     }

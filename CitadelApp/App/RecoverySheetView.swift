@@ -69,7 +69,7 @@ struct RecoverySheetView: View {
                         VStack(alignment: .leading, spacing: 6) {
                             Text("If you created a Full Vault Backup (.ctdl file), it contains all your vaults encrypted with a separate backup password.")
                                 .font(.system(size: 12))
-                            Text("To restore: Open Citadel \u{2192} More Actions \u{2192} Restore from Backup, then enter the backup password.")
+                            Text("To restore: Open Smaug \u{2192} More Actions \u{2192} Restore from Backup, then enter the backup password.")
                                 .font(.system(size: 12))
                         }
                         .padding(12)
@@ -136,7 +136,7 @@ struct RecoverySheetView: View {
 
     private func printSheet() {
         let text = """
-        CITADEL RECOVERY INFORMATION
+        SMAUG RECOVERY INFORMATION
         =============================
 
         Vault file: \(appState.vaultPath)

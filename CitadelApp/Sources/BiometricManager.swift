@@ -14,6 +14,10 @@ import os
 ///    re-derive wrapping key → decrypt password → open vault
 /// 3. 72-hour full re-auth enforced via UserDefaults timestamp
 ///
+/// Per-vault biometrics: each vault gets its own .bio-nonce-<hash> and .bio-blob-<hash>
+/// files, where <hash> is the first 8 characters of SHA256(vault_path). This allows
+/// independent Touch ID enrollment per vault.
+///
 /// Security model:
 /// - LAContext biometric check is enforced at the OS level
 /// - Wrapping key is never stored — it's derived from the nonce file + hardware UUID
@@ -24,19 +28,41 @@ public final class BiometricManager {
 
     // MARK: - Constants
 
-    private static let lastFullAuthKey = "citadel.lastFullAuthTimestamp"
     private nonisolated static let fullAuthMaxAge: TimeInterval = 72 * 60 * 60 // 72 hours
 
-    private static let logger = Logger(subsystem: "com.lemg-lab.citadel", category: "biometric")
+    private static let logger = Logger(subsystem: "com.lemg-lab.smaug", category: "biometric")
 
     // MARK: - File paths
 
-    private let noncePath: String
-    private let encryptedBlobPath: String
+    private let directory: String
+    private var noncePath: String
+    private var encryptedBlobPath: String
 
-    public init(directory: String) {
-        noncePath = (directory as NSString).appendingPathComponent(".bio-nonce")
-        encryptedBlobPath = (directory as NSString).appendingPathComponent(".bio-blob")
+    /// The last-full-auth UserDefaults key, unique per vault.
+    private var lastFullAuthKey: String
+
+    public init(directory: String, vaultPath: String = "") {
+        self.directory = directory
+        let suffix = Self.vaultSuffix(for: vaultPath)
+        noncePath = (directory as NSString).appendingPathComponent(".bio-nonce\(suffix)")
+        encryptedBlobPath = (directory as NSString).appendingPathComponent(".bio-blob\(suffix)")
+        lastFullAuthKey = "smaug.lastFullAuthTimestamp\(suffix)"
+    }
+
+    /// Update paths when switching vaults.
+    public func configure(forVaultPath vaultPath: String) {
+        let suffix = Self.vaultSuffix(for: vaultPath)
+        noncePath = (directory as NSString).appendingPathComponent(".bio-nonce\(suffix)")
+        encryptedBlobPath = (directory as NSString).appendingPathComponent(".bio-blob\(suffix)")
+        lastFullAuthKey = "smaug.lastFullAuthTimestamp\(suffix)"
+    }
+
+    /// Derive a short hash suffix from a vault path for per-vault file naming.
+    private nonisolated static func vaultSuffix(for vaultPath: String) -> String {
+        guard !vaultPath.isEmpty else { return "" }
+        let hash = SHA256.hash(data: Data(vaultPath.utf8))
+        let prefix = hash.prefix(4).map { String(format: "%02x", $0) }.joined()
+        return "-\(prefix)"
     }
 
     // MARK: - Public state
@@ -60,7 +86,7 @@ public final class BiometricManager {
 
     /// Whether a full master password re-entry is required (72h expiry).
     public var requiresFullAuth: Bool {
-        let lastAuth = UserDefaults.standard.double(forKey: Self.lastFullAuthKey)
+        let lastAuth = UserDefaults.standard.double(forKey: lastFullAuthKey)
         guard lastAuth > 0 else { return true }
         return Date().timeIntervalSince1970 - lastAuth > Self.fullAuthMaxAge
     }
@@ -85,7 +111,7 @@ public final class BiometricManager {
         do {
             let success = try await context.evaluatePolicy(
                 .deviceOwnerAuthenticationWithBiometrics,
-                localizedReason: "Enable Touch ID for Citadel"
+                localizedReason: "Enable Touch ID for Smaug"
             )
             print("BIO: LAContext auth result: \(success), error: nil")
             guard success else {
@@ -165,7 +191,7 @@ public final class BiometricManager {
         do {
             let success = try await context.evaluatePolicy(
                 .deviceOwnerAuthenticationWithBiometrics,
-                localizedReason: "Unlock Citadel"
+                localizedReason: "Unlock Smaug"
             )
             print("BIO: LAContext auth result: \(success), error: nil")
             guard success else {
@@ -221,7 +247,7 @@ public final class BiometricManager {
 
     /// Record that the user entered their full master password.
     public func recordFullAuth() {
-        UserDefaults.standard.set(Date().timeIntervalSince1970, forKey: Self.lastFullAuthKey)
+        UserDefaults.standard.set(Date().timeIntervalSince1970, forKey: lastFullAuthKey)
     }
 
     /// Check if full auth is required based on a given timestamp. Testable.
@@ -251,7 +277,7 @@ public final class BiometricManager {
             return uuid
         }
         // Fallback: use a stable identifier from the system
-        return ProcessInfo.processInfo.hostName + "-citadel"
+        return ProcessInfo.processInfo.hostName + "-smaug"
     }
 
     // MARK: - Encryption

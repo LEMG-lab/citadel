@@ -13,8 +13,8 @@ public final class BreachChecker {
 
     /// Whether the user has consented to breach checking.
     public var hasConsented: Bool {
-        get { UserDefaults.standard.bool(forKey: "citadel.breachCheckConsent") }
-        set { UserDefaults.standard.set(newValue, forKey: "citadel.breachCheckConsent") }
+        get { UserDefaults.standard.bool(forKey: "smaug.breachCheckConsent") }
+        set { UserDefaults.standard.set(newValue, forKey: "smaug.breachCheckConsent") }
     }
 
     public init() {}
@@ -42,7 +42,7 @@ public final class BreachChecker {
         // Query HIBP API
         let url = URL(string: "https://api.pwnedpasswords.com/range/\(prefix)")!
         var request = URLRequest(url: url)
-        request.setValue("Citadel Password Manager", forHTTPHeaderField: "User-Agent")
+        request.setValue("Smaug Password Manager", forHTTPHeaderField: "User-Agent")
         request.timeoutInterval = 10
 
         let (data, response) = try await URLSession.shared.data(for: request)

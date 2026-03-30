@@ -46,7 +46,7 @@ struct LockScreenView: View {
                     .padding(.bottom, 14)
 
                 // App name
-                Text("Citadel")
+                Text("Smaug")
                     .font(.system(size: 28, weight: .semibold, design: .rounded))
 
                 // Vault name

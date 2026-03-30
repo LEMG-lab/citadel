@@ -25,6 +25,7 @@ struct SettingsView: View {
     @State private var emergencyPassword = ""
     @State private var emergencyConfirm = ""
     @State private var emergencyMessage: String?
+    @State private var showingAbout = false
 
     var body: some View {
         @Bindable var appState = appState
@@ -63,6 +64,7 @@ struct SettingsView: View {
         .sheet(isPresented: $showingRecoverySheet) { RecoverySheetView() }
         .sheet(isPresented: $showingAuditLog) { AuditLogView() }
         .sheet(isPresented: $showingPasswordHealth) { PasswordHealthView() }
+        .sheet(isPresented: $showingAbout) { AboutView() }
         .onChange(of: selectedKdfPreset) { _, newValue in
             if newValue != .saved { showingKdfConfirmation = true }
         }
@@ -93,6 +95,7 @@ struct SettingsView: View {
             dataSection
             emergencySection
             auditSection
+            aboutSection
         }
         .padding(20)
     }
@@ -347,6 +350,25 @@ struct SettingsView: View {
         }
     }
 
+    // MARK: - About
+
+    @ViewBuilder
+    private var aboutSection: some View {
+        settingsSection("About") {
+            settingsRow(icon: "info.circle", iconColor: .citadelAccent) {
+                HStack {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Smaug").font(.system(size: 13, weight: .medium))
+                        Text("v1.5").font(.system(size: 11)).foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    Button("About Smaug") { showingAbout = true }
+                        .font(.system(size: 12))
+                }
+            }
+        }
+    }
+
     // MARK: - Reusable Layout
 
     @ViewBuilder
@@ -409,7 +431,7 @@ struct SettingsView: View {
             let csvData = CSVManager.export(entries: entries)
             let panel = NSSavePanel()
             panel.title = "Export Entries as CSV"
-            panel.nameFieldStringValue = "citadel-export.csv"
+            panel.nameFieldStringValue = "smaug-export.csv"
             panel.allowedContentTypes = [.commaSeparatedText]
             guard panel.runModal() == .OK, let url = panel.url else { return }
             try csvData.write(to: url)
@@ -454,7 +476,7 @@ struct SettingsView: View {
     private func exportEmergency() {
         let panel = NSSavePanel()
         panel.title = "Save Emergency Access File"
-        panel.nameFieldStringValue = "citadel-emergency.ctdl-emergency"
+        panel.nameFieldStringValue = "smaug-emergency.ctdl-emergency"
         panel.allowedContentTypes = [.init(filenameExtension: "ctdl-emergency") ?? .data]
         guard panel.runModal() == .OK, let url = panel.url else { return }
         do {

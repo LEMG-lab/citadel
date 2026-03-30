@@ -57,7 +57,7 @@ struct ReceiveShareView: View {
     private var inputSection: some View {
         SectionHeader(title: "Paste Share Link")
 
-        TextField(text: $linkText, prompt: Text("citadel://share#...").foregroundStyle(.tertiary), axis: .vertical) {}
+        TextField(text: $linkText, prompt: Text("smaug://share#...").foregroundStyle(.tertiary), axis: .vertical) {}
             .textFieldStyle(.plain)
             .font(.system(size: 12, design: .monospaced))
             .lineLimit(3...6)
