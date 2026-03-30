@@ -37,7 +37,7 @@ final class LargeTypeWindow {
         panel.backgroundColor = .clear
         panel.isOpaque = false
         panel.hasShadow = true
-        panel.hidesOnDeactivate = false
+        panel.hidesOnDeactivate = true
         panel.sharingType = .none
         panel.contentView = hostingView
         panel.center()
@@ -45,8 +45,8 @@ final class LargeTypeWindow {
 
         self.panel = panel
 
-        // Auto-dismiss after 30 seconds
-        autoDismissTimer = Timer.scheduledTimer(withTimeInterval: 30, repeats: false) { [weak self] _ in
+        // Auto-dismiss after 10 seconds
+        autoDismissTimer = Timer.scheduledTimer(withTimeInterval: 10, repeats: false) { [weak self] _ in
             DispatchQueue.main.async { [weak self] in
                 self?.close()
             }

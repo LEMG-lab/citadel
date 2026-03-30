@@ -20,6 +20,8 @@ struct EntryDetailView: View {
     @State private var attachments: [(name: String, size: Int)] = []
     @State private var showAttachments = false
     @State private var showingAttachmentPicker = false
+    @State private var attachmentToOpen: String?
+    @State private var showingAttachmentWarning = false
 
     private var isSecureNote: Bool {
         entry?.entryType == "secure_note"
@@ -120,7 +122,20 @@ struct EntryDetailView: View {
             Button("Delete", role: .destructive) { deleteEntry() }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("Are you sure you want to delete \"\(entry.title)\"? This cannot be undone.")
+            Text("This entry will be moved to Trash. To permanently delete it, empty the Trash from Settings.")
+        }
+        .confirmationDialog(
+            "Open Attachment",
+            isPresented: $showingAttachmentWarning,
+            titleVisibility: .visible
+        ) {
+            Button("Open") {
+                if let name = attachmentToOpen { openAttachment(name) }
+                attachmentToOpen = nil
+            }
+            Button("Cancel", role: .cancel) { attachmentToOpen = nil }
+        } message: {
+            Text("This will temporarily extract the file unencrypted to your system. The file will be deleted after 60 seconds. Continue?")
         }
     }
 
@@ -322,9 +337,7 @@ struct EntryDetailView: View {
                 Spacer()
 
                 copyButton {
-                    let pb = NSPasteboard.general
-                    pb.clearContents()
-                    pb.setString(url, forType: .string)
+                    appState.clipboard.copySecure(url)
                 }
             }
         }
@@ -406,9 +419,7 @@ struct EntryDetailView: View {
                         Spacer()
 
                         copyButton {
-                            let pb = NSPasteboard.general
-                            pb.clearContents()
-                            pb.setString(field.value, forType: .string)
+                            appState.clipboard.copySecure(field.value)
                         }
                     }
                 }
@@ -540,7 +551,8 @@ struct EntryDetailView: View {
                             .foregroundStyle(.secondary)
 
                         Button {
-                            openAttachment(att.name)
+                            attachmentToOpen = att.name
+                            showingAttachmentWarning = true
                         } label: {
                             Image(systemName: "arrow.down.circle")
                                 .font(.system(size: 13))
@@ -653,9 +665,7 @@ struct EntryDetailView: View {
     }
 
     private func copyUsername(_ username: String) {
-        let pb = NSPasteboard.general
-        pb.clearContents()
-        pb.setString(username, forType: .string)
+        appState.clipboard.copySecure(username)
     }
 
     private func toggleFavorite() {

@@ -180,14 +180,6 @@ struct LockScreenView: View {
             }
             .buttonStyle(.plain)
             .disabled(appState.isLoading)
-            .onAppear {
-                if !biometricAttempted {
-                    biometricAttempted = true
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                        unlockWithBiometrics()
-                    }
-                }
-            }
         }
 
         if !appState.vaultExists {

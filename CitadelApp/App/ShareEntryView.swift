@@ -146,7 +146,6 @@ struct ShareEntryView: View {
 
         Text(shareLink ?? "")
             .font(.system(size: 11, design: .monospaced))
-            .textSelection(.enabled)
             .lineLimit(4)
             .padding(8)
             .frame(maxWidth: .infinity, alignment: .leading)

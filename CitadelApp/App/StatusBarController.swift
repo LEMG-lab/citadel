@@ -253,10 +253,8 @@ final class StatusBarController: NSObject {
     }
 
     @objc private func copyUsernameForEntry(_ sender: NSMenuItem) {
-        guard let username = sender.representedObject as? String else { return }
-        let pasteboard = NSPasteboard.general
-        pasteboard.clearContents()
-        pasteboard.setString(username, forType: .string)
+        guard let appState, let username = sender.representedObject as? String else { return }
+        appState.clipboard.copySecure(username)
     }
 
     @objc private func switchToVault(_ sender: NSMenuItem) {

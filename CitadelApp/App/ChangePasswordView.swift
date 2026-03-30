@@ -49,6 +49,8 @@ struct ChangePasswordView: View {
                     .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
                     .focused($focusedField, equals: .new)
 
+                PasswordStrengthBar(password: newPassword)
+
                 SecureField(text: $confirmPassword, prompt: Text("Confirm New Password").foregroundStyle(.tertiary)) {}
                     .textFieldStyle(.plain)
                     .font(.system(size: 13))

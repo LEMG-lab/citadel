@@ -83,6 +83,7 @@ final class AppState {
     @ObservationIgnored var statusBar: StatusBarController?
     @ObservationIgnored var quickAccess: QuickAccessPanel?
     @ObservationIgnored let largeTypeWindow = LargeTypeWindow()
+    @ObservationIgnored private var vaultLockFD: Int32 = -1
 
     /// Password accessor for biometric enrollment (read-only copy).
     var currentPasswordForBiometric: Data? { currentPassword }
@@ -148,7 +149,10 @@ final class AppState {
 
     /// Switch to a different vault. Locks the current vault first.
     func switchVault(to info: VaultInfo) {
-        if !isLocked { lockVault() }
+        if !isLocked {
+            try? save()  // Persist pending changes before switching
+            lockVault()
+        }
         vaultPath = info.path
         activeVaultName = info.name
         vaultRegistry.activeVaultPath = info.path
@@ -208,12 +212,12 @@ final class AppState {
         let fm = FileManager.default
         guard !fm.fileExists(atPath: vaultPath) else { return }
 
-        // Try candidates in priority order
+        // Try candidates in priority order (.tmp is newest — written during save before rename)
         let candidates = [
+            vaultPath + ".tmp",
             vaultPath + ".prev",
             vaultPath + ".prev2",
             vaultPath + ".prev3",
-            vaultPath + ".tmp",
         ]
 
         for candidate in candidates {
@@ -256,6 +260,7 @@ final class AppState {
     // MARK: - Vault lifecycle
 
     func unlock(password: Data, keyfilePath: String? = nil) throws {
+        try acquireVaultLock()
         try engine.open(path: vaultPath, password: password, keyfilePath: keyfilePath)
         currentPassword = password
         currentKeyfilePath = keyfilePath
@@ -274,6 +279,7 @@ final class AppState {
         isLoading = true
         defer { isLoading = false }
         let path = vaultPathOverride ?? vaultPath
+        if vaultPathOverride == nil { try acquireVaultLock() }
         let eng = engine
         try await Task.detached {
             try eng.open(path: path, password: password, keyfilePath: keyfilePath)
@@ -298,6 +304,9 @@ final class AppState {
 
     func createVault(password: Data, keyfilePath: String? = nil) throws {
         try engine.create(password: password, keyfilePath: keyfilePath)
+        // Apply the user's saved KDF preset (default: maximum/1GB) to newly created vaults
+        let preset = KdfPreset.saved
+        try engine.setKdfParams(memory: preset.memory, iterations: preset.iterations, parallelism: preset.parallelism)
         try VaultPersistence.atomicSave(engine: engine, vaultPath: vaultPath, password: password, keyfilePath: keyfilePath)
         currentPassword = password
         currentKeyfilePath = keyfilePath
@@ -315,8 +324,11 @@ final class AppState {
         defer { isLoading = false }
         let eng = engine
         let path = vaultPath
+        let preset = KdfPreset.saved
         try await Task.detached {
             try eng.create(password: password, keyfilePath: keyfilePath)
+            // Apply the user's saved KDF preset (default: maximum/1GB) to newly created vaults
+            try eng.setKdfParams(memory: preset.memory, iterations: preset.iterations, parallelism: preset.parallelism)
             try VaultPersistence.atomicSave(engine: eng, vaultPath: path, password: password, keyfilePath: keyfilePath)
         }.value
         currentPassword = password
@@ -333,6 +345,7 @@ final class AppState {
     func lockVault() {
         autoLockManager?.stop()
         engine.close()
+        releaseVaultLock()
         clipboard.forceClear()
         if currentPassword != nil {
             currentPassword!.resetBytes(in: 0..<currentPassword!.count)
@@ -493,11 +506,11 @@ final class AppState {
             try VaultPersistence.atomicSave(engine: engine, vaultPath: vaultPath, password: newPassword, keyfilePath: newKeyfilePath)
         } catch {
             engine.close()
-            let fm = FileManager.default
             var restoreFailed = false
             do {
-                if fm.fileExists(atPath: vaultPath) { try fm.removeItem(atPath: vaultPath) }
-                try fm.moveItem(at: backupURL, to: URL(fileURLWithPath: vaultPath))
+                // Atomic restore: POSIX rename() replaces destination without a gap
+                let rc = Darwin.rename(backupURL.path, vaultPath)
+                guard rc == 0 else { throw VaultError.writeFailed }
                 try engine.open(path: vaultPath, password: currentPassword, keyfilePath: self.currentKeyfilePath)
                 self.currentPassword = currentPassword
             } catch { restoreFailed = true }
@@ -582,5 +595,27 @@ final class AppState {
             vaultRegistry.register(name: vault.name, path: path)
         }
         return manifest
+    }
+
+    // MARK: - File locking
+
+    /// Acquire an advisory lock on the vault file to prevent concurrent access.
+    private func acquireVaultLock() throws {
+        let fd = open(vaultPath, O_RDONLY)
+        guard fd >= 0 else { return } // File may not exist yet (create flow)
+        let rc = flock(fd, LOCK_EX | LOCK_NB)
+        if rc != 0 {
+            close(fd)
+            throw VaultError.internalError("This vault is already open in another instance.")
+        }
+        vaultLockFD = fd
+    }
+
+    /// Release the advisory lock on the vault file.
+    private func releaseVaultLock() {
+        guard vaultLockFD >= 0 else { return }
+        flock(vaultLockFD, LOCK_UN)
+        close(vaultLockFD)
+        vaultLockFD = -1
     }
 }

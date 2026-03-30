@@ -80,6 +80,30 @@ public final class SecureClipboard {
         clearTimer = timer
     }
 
+    /// Copy a non-password string (username, URL, custom field) with concealment markers
+    /// and auto-clear after the configured interval.
+    public func copySecure(_ text: String) {
+        let pb = NSPasteboard.general
+        pb.clearContents()
+
+        let item = NSPasteboardItem()
+        item.setString("", forType: Self.concealedType)
+        item.setString("", forType: Self.transientType)
+        item.setString(text, forType: .string)
+        pb.writeObjects([item])
+
+        trackedChangeCount = pb.changeCount
+
+        clearTimer?.invalidate()
+        let timer = Timer(timeInterval: clearInterval, repeats: false) { [weak self] _ in
+            Task { @MainActor in
+                self?.autoClear()
+            }
+        }
+        RunLoop.current.add(timer, forMode: .common)
+        clearTimer = timer
+    }
+
     /// Clear the clipboard only if it still contains what we put there.
     private func autoClear() {
         let pb = NSPasteboard.general

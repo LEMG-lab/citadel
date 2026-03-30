@@ -441,6 +441,11 @@ struct SettingsView: View {
             panel.nameFieldStringValue = "smaug-export.csv"
             panel.allowedContentTypes = [.commaSeparatedText]
             guard panel.runModal() == .OK, let url = panel.url else { return }
+            if Self.isCloudSyncedPath(url.path) {
+                dataResultMessage = "Cannot export to a cloud-synced folder. Please choose a local directory."
+                showingDataResult = true
+                return
+            }
             try csvData.write(to: url)
             appState.auditLogger.log(.exportCSV, detail: "\(entries.count) entries")
             dataResultMessage = "Exported \(entries.count) entries."
@@ -500,6 +505,20 @@ struct SettingsView: View {
         } catch {
             emergencyMessage = "Export failed: \(error.localizedDescription)"
         }
+    }
+
+    /// Check if a path is inside a known cloud-synced directory.
+    private static func isCloudSyncedPath(_ path: String) -> Bool {
+        let home = FileManager.default.homeDirectoryForCurrentUser.path
+        let cloudPrefixes = [
+            home + "/Library/Mobile Documents",
+            home + "/Library/CloudStorage",
+            home + "/Dropbox",
+            home + "/Google Drive",
+            home + "/OneDrive",
+        ]
+        let resolved = (path as NSString).resolvingSymlinksInPath
+        return cloudPrefixes.contains { resolved.hasPrefix($0) }
     }
 
     private func enrollBiometric() {

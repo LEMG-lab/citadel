@@ -19,6 +19,8 @@ struct EntryListView: View {
 
     @State private var searchText = ""
     @State private var sortOrder: SortOrder = .name
+    @State private var showingDeleteConfirmation = false
+    @State private var entryToDelete: String?
 
     // MARK: - Filtered & sorted entries
 
@@ -123,7 +125,8 @@ struct EntryListView: View {
                                     }
                                     .contextMenu {
                                         Button("Delete") {
-                                            deleteEntry(entry.id)
+                                            entryToDelete = entry.id
+                                            showingDeleteConfirmation = true
                                         }
                                     }
                             }
@@ -176,6 +179,15 @@ struct EntryListView: View {
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 6)
+        }
+        .confirmationDialog("Delete Entry", isPresented: $showingDeleteConfirmation, titleVisibility: .visible) {
+            Button("Delete", role: .destructive) {
+                if let id = entryToDelete { deleteEntry(id) }
+                entryToDelete = nil
+            }
+            Button("Cancel", role: .cancel) { entryToDelete = nil }
+        } message: {
+            Text("This entry will be moved to Trash.")
         }
     }
 

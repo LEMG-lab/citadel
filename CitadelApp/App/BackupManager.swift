@@ -23,11 +23,12 @@ enum BackupManager {
         // Validate the temp copy can be opened
         try VaultEngine.validate(path: tmpDestination.path, password: password, keyfilePath: keyfilePath)
 
-        // Only now replace existing backup with validated copy
-        if fm.fileExists(atPath: destination.path) {
-            try fm.removeItem(at: destination)
+        // Atomic replace: POSIX rename() atomically replaces destination on APFS
+        let rc = Darwin.rename(tmpDestination.path, destination.path)
+        guard rc == 0 else {
+            try? fm.removeItem(at: tmpDestination)
+            throw NSError(domain: NSPOSIXErrorDomain, code: Int(errno))
         }
-        try fm.moveItem(at: tmpDestination, to: destination)
 
         // Generate SHA-256 checksum file
         let data = try Data(contentsOf: destination)

@@ -48,6 +48,9 @@ struct MainView: View {
     @State private var showingImportResult = false
     @State private var showingExpiredAlert = false
     @State private var showingCSVExportWarning = false
+    @State private var showingRestoreOverwriteWarning = false
+    @State private var pendingRestoreURL: URL?
+    @State private var pendingRestorePassword: String?
 
     // MARK: - Filtered entries
 
@@ -230,6 +233,21 @@ struct MainView: View {
         } message: {
             Text("WARNING: This will export ALL your passwords in plaintext. The file will NOT be encrypted. Do not save to cloud-synced folders.")
         }
+        .confirmationDialog("Replace Existing Vaults?", isPresented: $showingRestoreOverwriteWarning, titleVisibility: .visible) {
+            Button("Replace", role: .destructive) {
+                if let url = pendingRestoreURL, let pw = pendingRestorePassword {
+                    doRestore(from: url, password: pw)
+                }
+                pendingRestoreURL = nil
+                pendingRestorePassword = nil
+            }
+            Button("Cancel", role: .cancel) {
+                pendingRestoreURL = nil
+                pendingRestorePassword = nil
+            }
+        } message: {
+            Text("This will replace your current vault(s). Recent changes not backed up will be lost. Continue?")
+        }
         .task {
             try? await Task.sleep(for: .milliseconds(500))
             if appState.expiredEntriesMessage != nil {
@@ -387,9 +405,7 @@ struct MainView: View {
     private func copySelectedUsername() {
         guard let id = appState.selectedEntryID,
               let entry = try? appState.engine.getEntry(uuid: id) else { return }
-        let pb = NSPasteboard.general
-        pb.clearContents()
-        pb.setString(entry.username, forType: .string)
+        appState.clipboard.copySecure(entry.username)
     }
 
     private func exportCSV() {
@@ -411,6 +427,11 @@ struct MainView: View {
             panel.nameFieldStringValue = "smaug-export.csv"
             panel.allowedContentTypes = [.commaSeparatedText]
             guard panel.runModal() == .OK, let url = panel.url else { return }
+            if Self.isCloudSyncedPath(url.path) {
+                importResultMessage = "Cannot export to a cloud-synced folder. Please choose a local directory."
+                showingImportResult = true
+                return
+            }
             try csvData.write(to: url)
             appState.auditLogger.log(.exportCSV, detail: "\(entries.count) entries")
         } catch {
@@ -503,13 +524,41 @@ struct MainView: View {
         alert.addButton(withTitle: "Cancel")
         guard alert.runModal() == .alertFirstButtonReturn else { return }
 
+        // Check if any vault files at the destination already exist
+        let fm = FileManager.default
+        let dir = appState.vaultDirectory
+        let hasExisting = (try? fm.contentsOfDirectory(atPath: dir))?.contains { $0.hasSuffix(".kdbx") } ?? false
+        if hasExisting {
+            pendingRestoreURL = url
+            pendingRestorePassword = input.stringValue
+            showingRestoreOverwriteWarning = true
+        } else {
+            doRestore(from: url, password: input.stringValue)
+        }
+    }
+
+    private func doRestore(from url: URL, password: String) {
         do {
-            let manifest = try appState.restoreFromBackup(at: url, backupPassword: input.stringValue)
+            let manifest = try appState.restoreFromBackup(at: url, backupPassword: password)
             backupResultMessage = "Restored \(manifest.vaults.count) vault(s) successfully."
         } catch {
             backupResultMessage = "Restore failed: \(error.localizedDescription)"
         }
         showingBackupResult = true
+    }
+
+    /// Check if a path is inside a known cloud-synced directory.
+    private static func isCloudSyncedPath(_ path: String) -> Bool {
+        let home = FileManager.default.homeDirectoryForCurrentUser.path
+        let cloudPrefixes = [
+            home + "/Library/Mobile Documents",
+            home + "/Library/CloudStorage",
+            home + "/Dropbox",
+            home + "/Google Drive",
+            home + "/OneDrive",
+        ]
+        let resolved = (path as NSString).resolvingSymlinksInPath
+        return cloudPrefixes.contains { resolved.hasPrefix($0) }
     }
 }
 
@@ -739,7 +788,7 @@ struct AboutView: View {
                 Text("Built with Rust + SwiftUI")
                     .font(.system(size: 11))
                     .foregroundStyle(.secondary)
-                Text("Encryption: ChaCha20-256 + Argon2id (1GB)")
+                Text("Encryption: ChaCha20-256 + Argon2id (up to 1GB)")
                     .font(.system(size: 11))
                     .foregroundStyle(.secondary)
                 Text("Format: KDBX 4.x (KeePass compatible)")
