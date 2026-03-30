@@ -130,6 +130,9 @@ final class AppState {
         recoverVaultIfNeeded()
         cloudSyncWarning = Self.detectCloudSync(vaultDir: dir.path)
 
+        // Migrate: remove old file-based biometric data (replaced by Keychain)
+        BiometricManager.cleanupOldBioFiles(inDirectory: dir.path)
+
         autoLockManager = AutoLockManager { [weak self] in
             self?.lockVault()
         }

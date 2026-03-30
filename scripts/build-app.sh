@@ -28,9 +28,9 @@ cp "$ROOT/CitadelApp/.build/arm64-apple-macosx/release/Citadel" "$APP/Contents/M
 # Copy Info.plist
 cp "$ROOT/CitadelApp/Info.plist" "$APP/Contents/"
 
-echo "==> Signing with hardened runtime (ad-hoc)..."
+echo "==> Signing with hardened runtime (Developer ID)..."
 codesign --force --deep --options runtime \
-    --sign - \
+    --sign "Apple Development: luis@expertop.com (AKT66WTDPP)" \
     "$APP"
 
 echo ""
