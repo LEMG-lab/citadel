@@ -207,14 +207,35 @@ final class AppState {
     private func recoverVaultIfNeeded() {
         let fm = FileManager.default
         guard !fm.fileExists(atPath: vaultPath) else { return }
-        let prevPath = vaultPath + ".prev"
-        if fm.fileExists(atPath: prevPath), Self.looksLikeKDBX(atPath: prevPath) {
-            try? fm.copyItem(atPath: prevPath, toPath: vaultPath)
-            return
-        }
-        let tmpPath = vaultPath + ".tmp"
-        if fm.fileExists(atPath: tmpPath), Self.looksLikeKDBX(atPath: tmpPath) {
-            _ = rename(tmpPath, vaultPath)
+
+        // Try candidates in priority order
+        let candidates = [
+            vaultPath + ".prev",
+            vaultPath + ".prev2",
+            vaultPath + ".prev3",
+            vaultPath + ".tmp",
+        ]
+
+        for candidate in candidates {
+            guard fm.fileExists(atPath: candidate), Self.looksLikeKDBX(atPath: candidate) else { continue }
+            do {
+                try fm.copyItem(atPath: candidate, toPath: vaultPath)
+                // Validate: use empty password — wrongPassword means it's a real KDBX
+                do {
+                    try VaultEngine.validate(path: vaultPath, password: Data())
+                    return // Valid KDBX opened with empty password
+                } catch VaultError.wrongPassword {
+                    return // Valid KDBX, just wrong password — file is good
+                } catch {
+                    // Invalid file — remove and mark as bad
+                    try? fm.removeItem(atPath: vaultPath)
+                    let invalidPath = candidate + ".recovered-invalid"
+                    try? fm.moveItem(atPath: candidate, toPath: invalidPath)
+                    continue // Try next candidate
+                }
+            } catch {
+                continue // Copy failed, try next candidate
+            }
         }
     }
 
@@ -334,13 +355,17 @@ final class AppState {
     // MARK: - Temp file cleanup
 
     /// Remove temporary files (attachments, emergency vault extractions) on lock.
+    /// Matches any directory starting with the smaug-attachments or smaug-emergency prefix.
     private func cleanupTempFiles() {
         let fm = FileManager.default
         let tmpBase = fm.temporaryDirectory
-        let dirs = ["smaug-attachments", "smaug-emergency"]
-        for dir in dirs {
-            let path = tmpBase.appendingPathComponent(dir)
-            try? fm.removeItem(at: path)
+        let prefixes = ["smaug-attachments", "smaug-emergency"]
+        guard let contents = try? fm.contentsOfDirectory(atPath: tmpBase.path) else { return }
+        for item in contents {
+            if prefixes.contains(where: { item.hasPrefix($0) }) {
+                let path = tmpBase.appendingPathComponent(item)
+                try? fm.removeItem(at: path)
+            }
         }
     }
 
@@ -439,7 +464,17 @@ final class AppState {
     @discardableResult
     func emptyRecycleBin() throws -> Int {
         let count = try engine.emptyRecycleBin()
-        try save()
+        do {
+            try save()
+        } catch {
+            // Save failed — reopen vault from disk to restore pre-empty state
+            if let pw = currentPassword {
+                engine.close()
+                try? engine.open(path: vaultPath, password: pw, keyfilePath: currentKeyfilePath)
+                try? refreshEntries()
+            }
+            throw VaultError.internalError("Empty recycle bin failed to save. Changes reverted.")
+        }
         auditLogger.log(.emptyRecycleBin)
         return count
     }
@@ -504,6 +539,16 @@ final class AppState {
             throw VaultError.internalError("A vault already exists at \(vaultPath)")
         }
         try fm.copyItem(at: sourceURL, to: URL(fileURLWithPath: vaultPath))
+        // Validate the copied file is a real KDBX
+        do {
+            try VaultEngine.validate(path: vaultPath, password: Data())
+        } catch VaultError.wrongPassword {
+            // Valid KDBX — wrong password just means it's a real vault file
+        } catch {
+            // Not a valid KDBX — remove and throw
+            try? fm.removeItem(atPath: vaultPath)
+            throw VaultError.fileCorrupted
+        }
     }
 
     // MARK: - Backup

@@ -47,6 +47,7 @@ struct MainView: View {
     @State private var importResultMessage: String?
     @State private var showingImportResult = false
     @State private var showingExpiredAlert = false
+    @State private var showingCSVExportWarning = false
 
     // MARK: - Filtered entries
 
@@ -158,7 +159,7 @@ struct MainView: View {
                 .help("New entry")
 
                 Menu {
-                    Button("Export CSV\u{2026}") { exportCSV() }
+                    Button("Export CSV\u{2026}") { showingCSVExportWarning = true }
                     Button("Import CSV\u{2026}") { importCSV() }
                     Divider()
                     Button("Receive Shared Entry\u{2026}") { showingReceiveShare = true }
@@ -222,6 +223,12 @@ struct MainView: View {
             Button("OK") {}
         } message: {
             Text(appState.expiredEntriesMessage ?? "")
+        }
+        .confirmationDialog("Export Passwords", isPresented: $showingCSVExportWarning, titleVisibility: .visible) {
+            Button("Export Anyway", role: .destructive) { exportCSV() }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("WARNING: This will export ALL your passwords in plaintext. The file will NOT be encrypted. Do not save to cloud-synced folders.")
         }
         .task {
             try? await Task.sleep(for: .milliseconds(500))

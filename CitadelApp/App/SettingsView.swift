@@ -26,6 +26,7 @@ struct SettingsView: View {
     @State private var emergencyConfirm = ""
     @State private var emergencyMessage: String?
     @State private var showingAbout = false
+    @State private var showingCSVExportWarning = false
 
     var body: some View {
         @Bindable var appState = appState
@@ -75,6 +76,12 @@ struct SettingsView: View {
             Text("This will re-encrypt your vault with \(selectedKdfPreset.label) KDF parameters.")
         }
         .alert("Data Operation", isPresented: $showingDataResult) { Button("OK") {} } message: { Text(dataResultMessage ?? "") }
+        .confirmationDialog("Export Passwords", isPresented: $showingCSVExportWarning, titleVisibility: .visible) {
+            Button("Export Anyway", role: .destructive) { exportCSV() }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("WARNING: This will export ALL your passwords in plaintext. The file will NOT be encrypted. Do not save to cloud-synced folders.")
+        }
         .confirmationDialog("Empty Recycle Bin", isPresented: $showingEmptyRecycleBin, titleVisibility: .visible) {
             Button("Delete Permanently", role: .destructive) { emptyRecycleBin() }
             Button("Cancel", role: .cancel) {}
@@ -256,7 +263,7 @@ struct SettingsView: View {
                 HStack {
                     Text("Export CSV").font(.system(size: 13))
                     Spacer()
-                    Button("Export\u{2026}") { exportCSV() }.font(.system(size: 12))
+                    Button("Export\u{2026}") { showingCSVExportWarning = true }.font(.system(size: 12))
                 }
             }
             settingsRow(icon: "arrow.down.doc", iconColor: .blue) {

@@ -6,18 +6,28 @@ import CitadelCore
 enum BackupManager {
 
     /// Copy vault to a user-chosen destination, validate the copy, and write a SHA-256 checksum.
+    /// Atomic: writes to .tmp first, validates, then renames over destination.
     static func backup(vaultPath: String, to destination: URL, password: Data, keyfilePath: String? = nil) throws {
         let fm = FileManager.default
         let sourceURL = URL(fileURLWithPath: vaultPath)
+        let tmpDestination = destination.appendingPathExtension("tmp")
 
-        // Copy vault file (overwrite if exists)
+        // Clean up stale temp if present
+        if fm.fileExists(atPath: tmpDestination.path) {
+            try fm.removeItem(at: tmpDestination)
+        }
+
+        // Copy to temp location first
+        try fm.copyItem(at: sourceURL, to: tmpDestination)
+
+        // Validate the temp copy can be opened
+        try VaultEngine.validate(path: tmpDestination.path, password: password, keyfilePath: keyfilePath)
+
+        // Only now replace existing backup with validated copy
         if fm.fileExists(atPath: destination.path) {
             try fm.removeItem(at: destination)
         }
-        try fm.copyItem(at: sourceURL, to: destination)
-
-        // Validate the backup copy can be opened
-        try VaultEngine.validate(path: destination.path, password: password, keyfilePath: keyfilePath)
+        try fm.moveItem(at: tmpDestination, to: destination)
 
         // Generate SHA-256 checksum file
         let data = try Data(contentsOf: destination)

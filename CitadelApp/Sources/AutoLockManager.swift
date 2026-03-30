@@ -29,6 +29,7 @@ public final class AutoLockManager {
     private let lockAction: @MainActor () -> Void
 
     private var inactivityTimer: Timer?
+    private var appSwitchTimer: Timer?
     private var observers: [NSObjectProtocol] = []
     private var localEventMonitor: Any?
 
@@ -68,6 +69,21 @@ public final class AutoLockManager {
             }
         )
 
+        // App-switch monitoring: lock after 30 seconds in background
+        let nc = NotificationCenter.default
+        observers.append(
+            nc.addObserver(forName: NSApplication.willResignActiveNotification, object: nil, queue: .main) {
+                [weak self] _ in
+                Task { @MainActor in self?.startAppSwitchTimer() }
+            }
+        )
+        observers.append(
+            nc.addObserver(forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main) {
+                [weak self] _ in
+                Task { @MainActor in self?.cancelAppSwitchTimer() }
+            }
+        )
+
         // Local event monitor for user activity inside this app
         let mask: NSEvent.EventTypeMask = [.leftMouseDown, .rightMouseDown, .keyDown, .scrollWheel, .mouseMoved]
         localEventMonitor = NSEvent.addLocalMonitorForEvents(matching: mask) { [weak self] event in
@@ -82,6 +98,8 @@ public final class AutoLockManager {
     public func stop() {
         inactivityTimer?.invalidate()
         inactivityTimer = nil
+        appSwitchTimer?.invalidate()
+        appSwitchTimer = nil
         let ws = NSWorkspace.shared.notificationCenter
         let dc = DistributedNotificationCenter.default()
         let nc = NotificationCenter.default
@@ -107,6 +125,20 @@ public final class AutoLockManager {
         inactivityTimer?.invalidate()
         inactivityTimer = nil
         lockAction()
+    }
+
+    // MARK: - App switch timer
+
+    private func startAppSwitchTimer() {
+        appSwitchTimer?.invalidate()
+        appSwitchTimer = Timer.scheduledTimer(withTimeInterval: 30, repeats: false) { [weak self] _ in
+            Task { @MainActor in self?.lock() }
+        }
+    }
+
+    private func cancelAppSwitchTimer() {
+        appSwitchTimer?.invalidate()
+        appSwitchTimer = nil
     }
 
     // MARK: - Internal

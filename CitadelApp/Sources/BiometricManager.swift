@@ -2,6 +2,7 @@ import Foundation
 import LocalAuthentication
 import Security
 import CryptoKit
+import CCitadelCore
 import os
 
 /// Manages Touch ID enrollment and biometric-protected vault unlock.
@@ -255,12 +256,36 @@ public final class BiometricManager {
     // MARK: - Key derivation
 
     /// Derive a wrapping key from a random nonce and a device-specific identifier.
-    /// SHA-256(nonce || device_id) — binds the key to this specific machine.
+    /// Uses Argon2id (64MB) via Rust FFI, with SHA-256 fallback if FFI fails.
     nonisolated static func deriveWrappingKey(nonce: Data) -> Data {
         let deviceID = deviceIdentifier()
-        var input = nonce
-        input.append(Data(deviceID.utf8))
-        let hash = SHA256.hash(data: input)
+        var password = nonce
+        password.append(Data(deviceID.utf8))
+        let salt = Data("smaug-biometric-v2".utf8)
+
+        // Try Argon2id via FFI (64MB params — vault_derive_key_argon2)
+        var output = [UInt8](repeating: 0, count: 32)
+        let result = password.withUnsafeBytes { pwBuf in
+            salt.withUnsafeBytes { saltBuf in
+                output.withUnsafeMutableBufferPointer { outBuf in
+                    vault_derive_key_argon2(
+                        pwBuf.baseAddress?.assumingMemoryBound(to: UInt8.self),
+                        UInt32(password.count),
+                        saltBuf.baseAddress?.assumingMemoryBound(to: UInt8.self),
+                        UInt32(salt.count),
+                        outBuf.baseAddress,
+                        UInt32(outBuf.count)
+                    )
+                }
+            }
+        }
+
+        if result == VAULT_RESULT_OK {
+            return Data(output)
+        }
+
+        // Fallback to SHA-256 if Argon2id FFI fails
+        let hash = SHA256.hash(data: password + salt)
         return Data(hash)
     }
 

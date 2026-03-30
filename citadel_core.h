@@ -373,4 +373,16 @@ enum VaultResult vault_derive_key_argon2(const uint8_t *password_ptr,
                                          uint8_t *out_ptr,
                                          uint32_t out_len);
 
+/**
+ * Derive a 32-byte key from password + salt using Argon2id with high parameters.
+ * Parameters: 256 MB memory, 4 iterations, 4 parallelism lanes.
+ * Used for emergency and backup file encryption.
+ */
+enum VaultResult vault_derive_key_argon2_high(const uint8_t *password_ptr,
+                                              uint32_t password_len,
+                                              const uint8_t *salt_ptr,
+                                              uint32_t salt_len,
+                                              uint8_t *out_ptr,
+                                              uint32_t out_len);
+
 #endif  /* CITADEL_CORE_H */

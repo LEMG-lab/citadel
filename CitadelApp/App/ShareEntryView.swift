@@ -12,6 +12,12 @@ struct ShareEntryView: View {
     @State private var shareLink: String?
     @State private var errorMessage: String?
     @State private var copied = false
+    @State private var clipboardChangeCount: Int = 0
+    @State private var clipboardClearTimer: Timer?
+
+    /// Pasteboard type markers for concealed clipboard content.
+    private static let concealedType = NSPasteboard.PasteboardType("org.nspasteboard.ConcealedType")
+    private static let transientType = NSPasteboard.PasteboardType("org.nspasteboard.TransientType")
 
     private var availableFields: [(label: String, value: String, isProtected: Bool)] {
         var fields: [(String, String, Bool)] = []
@@ -148,9 +154,7 @@ struct ShareEntryView: View {
 
         Button {
             if let link = shareLink {
-                let pb = NSPasteboard.general
-                pb.clearContents()
-                pb.setString(link, forType: .string)
+                copyConcealed(link)
                 copied = true
             }
         } label: {
@@ -181,6 +185,29 @@ struct ShareEntryView: View {
         .background(Color.citadelWarning.opacity(0.08), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
     }
 
+    /// Copy text to clipboard with ConcealedType and TransientType markers,
+    /// plus a 30-second auto-clear timer.
+    private func copyConcealed(_ text: String) {
+        let pb = NSPasteboard.general
+        pb.clearContents()
+        let item = NSPasteboardItem()
+        item.setString(text, forType: .string)
+        item.setData(Data(), forType: Self.concealedType)
+        item.setData(Data(), forType: Self.transientType)
+        pb.writeObjects([item])
+        clipboardChangeCount = pb.changeCount
+        // Auto-clear after 30 seconds if clipboard hasn't changed
+        clipboardClearTimer?.invalidate()
+        let savedCount = clipboardChangeCount
+        clipboardClearTimer = Timer.scheduledTimer(withTimeInterval: 30, repeats: false) { _ in
+            DispatchQueue.main.async {
+                if NSPasteboard.general.changeCount == savedCount {
+                    NSPasteboard.general.clearContents()
+                }
+            }
+        }
+    }
+
     private func generateLink() {
         errorMessage = nil
         let fields = availableFields
@@ -194,11 +221,9 @@ struct ShareEntryView: View {
 
         do {
             shareLink = try SecureShare.createShareLink(entry: sharedEntry)
-            // Auto-copy
+            // Auto-copy with concealed clipboard
             if let link = shareLink {
-                let pb = NSPasteboard.general
-                pb.clearContents()
-                pb.setString(link, forType: .string)
+                copyConcealed(link)
                 copied = true
             }
         } catch {

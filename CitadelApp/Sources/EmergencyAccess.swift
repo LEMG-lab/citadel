@@ -48,12 +48,24 @@ public enum EmergencyAccess {
             guard raw.count > 37 else { throw EmergencyAccessError.invalidFormat }
             let salt = raw.subdata(in: 5..<37)
             let encrypted = raw.dropFirst(37)
-            guard let key = Argon2Bridge.deriveKey(from: emergencyPassword, salt: salt) else {
+
+            // Try new 256MB params first
+            if let key = Argon2Bridge.deriveKey(from: emergencyPassword, salt: salt) {
+                do {
+                    let sealedBox = try ChaChaPoly.SealedBox(combined: encrypted)
+                    return try ChaChaPoly.open(sealedBox, using: key)
+                } catch {
+                    // Fall through to try old params
+                }
+            }
+
+            // Fallback: try old 64MB params (for v2 files created before param upgrade)
+            guard let lowKey = Argon2Bridge.deriveKeyLow(from: emergencyPassword, salt: salt) else {
                 throw EmergencyAccessError.keyDerivationFailed
             }
             do {
                 let sealedBox = try ChaChaPoly.SealedBox(combined: encrypted)
-                return try ChaChaPoly.open(sealedBox, using: key)
+                return try ChaChaPoly.open(sealedBox, using: lowKey)
             } catch {
                 throw EmergencyAccessError.wrongPassword
             }
@@ -77,11 +89,14 @@ public enum EmergencyAccess {
     public static func openToTempFile(at url: URL, emergencyPassword: String) throws -> String {
         let kdbxData = try decrypt(at: url, emergencyPassword: emergencyPassword)
         let tmpDir = FileManager.default.temporaryDirectory
-            .appendingPathComponent("smaug-emergency", isDirectory: true)
-        try FileManager.default.createDirectory(at: tmpDir, withIntermediateDirectories: true)
+            .appendingPathComponent("smaug-emergency-\(UUID().uuidString)", isDirectory: true)
+        // Guard against symlink attacks
+        if FileManager.default.fileExists(atPath: tmpDir.path) {
+            try FileManager.default.removeItem(at: tmpDir)
+        }
+        try FileManager.default.createDirectory(at: tmpDir, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
         let tmpPath = tmpDir.appendingPathComponent("emergency-vault.kdbx")
         try kdbxData.write(to: tmpPath, options: [.atomic])
-        // Set restrictive permissions
         try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: tmpPath.path)
         return tmpPath.path
     }

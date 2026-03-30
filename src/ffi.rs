@@ -148,7 +148,11 @@ pub extern "C" fn vault_create_with_kdf(
             let s = unsafe { cstr_to_str(keyfile_path) };
             if s.is_empty() { None } else { Some(s) }
         };
-        let kdf = KdfParams { memory: kdf_memory, iterations: kdf_iterations, parallelism: kdf_parallelism };
+        let kdf = KdfParams {
+            memory: kdf_memory.max(64 * 1024 * 1024),
+            iterations: kdf_iterations.max(2),
+            parallelism: kdf_parallelism.max(1),
+        };
         match VaultState::create_with_kdf(&pw, kf, kdf) {
             Ok(state) => {
                 let boxed = Box::new(state);
@@ -176,7 +180,11 @@ pub extern "C" fn vault_set_kdf_params(
     }
     let result = catch_unwind(std::panic::AssertUnwindSafe(|| {
         let state = unsafe { &mut *(handle as *mut VaultState) };
-        let kdf = KdfParams { memory: kdf_memory, iterations: kdf_iterations, parallelism: kdf_parallelism };
+        let kdf = KdfParams {
+            memory: kdf_memory.max(64 * 1024 * 1024),
+            iterations: kdf_iterations.max(2),
+            parallelism: kdf_parallelism.max(1),
+        };
         state.set_kdf_params(kdf);
         VaultResult::Ok
     }));
@@ -1140,6 +1148,47 @@ pub extern "C" fn vault_derive_key_argon2(
             mem_cost: 65536,   // 64 MB in KiB
             time_cost: 3,
             lanes: 2,
+            hash_length: 32,
+            ..argon2::Config::default()
+        };
+
+        match argon2::hash_raw(password, salt, &config) {
+            Ok(hash) => {
+                let out = unsafe { slice::from_raw_parts_mut(out_ptr, 32) };
+                out.copy_from_slice(&hash[..32]);
+                VaultResult::Ok
+            }
+            Err(_) => VaultResult::InternalError,
+        }
+    }));
+    result.unwrap_or(VaultResult::InternalError)
+}
+
+/// Derive a 32-byte key from password + salt using Argon2id with high parameters.
+/// Parameters: 256 MB memory, 4 iterations, 4 parallelism lanes.
+/// Used for emergency and backup file encryption.
+#[no_mangle]
+pub extern "C" fn vault_derive_key_argon2_high(
+    password_ptr: *const u8,
+    password_len: u32,
+    salt_ptr: *const u8,
+    salt_len: u32,
+    out_ptr: *mut u8,
+    out_len: u32,
+) -> VaultResult {
+    if password_ptr.is_null() || salt_ptr.is_null() || out_ptr.is_null() || out_len < 32 {
+        return VaultResult::InternalError;
+    }
+    let result = catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let password = unsafe { slice::from_raw_parts(password_ptr, password_len as usize) };
+        let salt = unsafe { slice::from_raw_parts(salt_ptr, salt_len as usize) };
+
+        let config = argon2::Config {
+            variant: argon2::Variant::Argon2id,
+            version: argon2::Version::Version13,
+            mem_cost: 262144,  // 256 MB in KiB
+            time_cost: 4,
+            lanes: 4,
             hash_length: 32,
             ..argon2::Config::default()
         };

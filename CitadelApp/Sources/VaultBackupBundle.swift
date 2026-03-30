@@ -148,11 +148,23 @@ public enum VaultBackupBundle {
         if raw.count > 37 && raw[4] == versionArgon2 {
             let salt = raw.subdata(in: 5..<37)
             let encrypted = raw.dropFirst(37)
-            guard let key = Argon2Bridge.deriveKey(from: backupPassword, salt: salt) else {
+
+            // Try new 256MB params first
+            if let key = Argon2Bridge.deriveKey(from: backupPassword, salt: salt) {
+                do {
+                    let sealedBox = try ChaChaPoly.SealedBox(combined: encrypted)
+                    return try ChaChaPoly.open(sealedBox, using: key)
+                } catch {
+                    // Fall through to try old params
+                }
+            }
+
+            // Fallback: try old 64MB params (for v2 files created before param upgrade)
+            guard let lowKey = Argon2Bridge.deriveKeyLow(from: backupPassword, salt: salt) else {
                 throw BackupBundleError.keyDerivationFailed
             }
             let sealedBox = try ChaChaPoly.SealedBox(combined: encrypted)
-            return try ChaChaPoly.open(sealedBox, using: key)
+            return try ChaChaPoly.open(sealedBox, using: lowKey)
         }
 
         // v1 legacy: magic(4) + sealed (SHA-256 key derivation)
