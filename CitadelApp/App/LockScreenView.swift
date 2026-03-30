@@ -13,6 +13,10 @@ struct LockScreenView: View {
     @State private var errorMessage: String?
     @State private var keyfilePath: String?
     @State private var biometricAttempted = false
+    @State private var showingEmergencyOpen = false
+    @State private var emergencyPassword = ""
+    @State private var emergencyVaultPassword = ""
+    @State private var emergencyMessage: String?
     @FocusState private var focusedField: Field?
 
     private enum Field: Hashable {
@@ -94,7 +98,7 @@ struct LockScreenView: View {
                 Spacer()
 
                 // Version
-                Text("v1.4")
+                Text("v1.5")
                     .font(.system(size: 11))
                     .foregroundStyle(Color.citadelTertiary)
                     .padding(.bottom, 20)
@@ -204,6 +208,18 @@ struct LockScreenView: View {
                 .font(.system(size: 13))
                 .foregroundStyle(Color.citadelSecondary)
                 .buttonStyle(.plain)
+        }
+
+        Divider()
+            .padding(.vertical, 4)
+
+        Button("Open Emergency File\u{2026}") { openEmergencyFile() }
+            .font(.system(size: 13))
+            .foregroundStyle(Color.citadelDanger)
+            .buttonStyle(.plain)
+
+        if showingEmergencyOpen {
+            emergencyOpenFields
         }
     }
 
@@ -318,6 +334,93 @@ struct LockScreenView: View {
         panel.canChooseDirectories = false
         guard panel.runModal() == .OK, let url = panel.url else { return }
         keyfilePath = url.path
+    }
+
+    // MARK: - Emergency Open
+
+    @ViewBuilder
+    private var emergencyOpenFields: some View {
+        VStack(spacing: 8) {
+            SecureField(text: $emergencyPassword, prompt: Text("Emergency Password")) {}
+                .textFieldStyle(.plain)
+                .font(.system(size: 13))
+                .padding(.horizontal, 12)
+                .frame(height: 36)
+                .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+
+            SecureField(text: $emergencyVaultPassword, prompt: Text("Vault Master Password")) {}
+                .textFieldStyle(.plain)
+                .font(.system(size: 13))
+                .padding(.horizontal, 12)
+                .frame(height: 36)
+                .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                .onSubmit { doEmergencyOpen() }
+
+            if let msg = emergencyMessage {
+                Text(msg).font(.system(size: 11)).foregroundStyle(Color.citadelDanger)
+            }
+
+            HStack(spacing: 12) {
+                Button("Cancel") {
+                    showingEmergencyOpen = false
+                    emergencyPassword = ""
+                    emergencyVaultPassword = ""
+                    emergencyMessage = nil
+                }
+                .font(.system(size: 12))
+                .foregroundStyle(Color.citadelSecondary)
+                .buttonStyle(.plain)
+
+                Button(action: doEmergencyOpen) {
+                    Text("Open")
+                        .font(.system(size: 13, weight: .semibold))
+                        .padding(.horizontal, 16)
+                        .frame(height: 32)
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(.citadelDanger)
+                .disabled(emergencyPassword.isEmpty || emergencyVaultPassword.isEmpty)
+            }
+        }
+    }
+
+    @State private var emergencyFilePath: String?
+
+    private func openEmergencyFile() {
+        let panel = NSOpenPanel()
+        panel.title = "Select Emergency File"
+        panel.allowedContentTypes = [.init(filenameExtension: "ctdl-emergency") ?? .data]
+        panel.allowsMultipleSelection = false
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        emergencyFilePath = url.path
+        showingEmergencyOpen = true
+        emergencyPassword = ""
+        emergencyVaultPassword = ""
+        emergencyMessage = nil
+    }
+
+    private func doEmergencyOpen() {
+        guard let filePath = emergencyFilePath else { return }
+        emergencyMessage = nil
+        do {
+            let tmpKdbxPath = try EmergencyAccess.openToTempFile(
+                at: URL(fileURLWithPath: filePath),
+                emergencyPassword: emergencyPassword
+            )
+            let pw = Data(emergencyVaultPassword.utf8)
+            emergencyPassword = ""
+            emergencyVaultPassword = ""
+            Task {
+                do {
+                    try await appState.unlockAsync(password: pw, vaultPathOverride: tmpKdbxPath)
+                    showingEmergencyOpen = false
+                } catch {
+                    emergencyMessage = "Could not open vault — check both passwords"
+                }
+            }
+        } catch {
+            emergencyMessage = error.localizedDescription
+        }
     }
 
     // MARK: - Actions

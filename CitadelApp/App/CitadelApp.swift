@@ -21,6 +21,7 @@ extension Notification.Name {
     static let citadelShowSettings = Notification.Name("citadelShowSettings")
     static let citadelCopyPassword = Notification.Name("citadelCopyPassword")
     static let citadelCopyUsername = Notification.Name("citadelCopyUsername")
+    static let citadelOpenEmergency = Notification.Name("citadelOpenEmergency")
 }
 
 // MARK: - Appearance environment key
@@ -81,6 +82,15 @@ struct CitadelCommands: Commands {
             }
             .keyboardShortcut("n")
             .disabled(appState?.isLocked ?? true)
+        }
+
+        // File > Open Emergency File
+        CommandGroup(after: .newItem) {
+            Divider()
+            Button("Open Emergency File\u{2026}") {
+                NotificationCenter.default.post(name: .citadelOpenEmergency, object: nil)
+            }
+            .keyboardShortcut("e", modifiers: [.command, .shift])
         }
 
         // App settings

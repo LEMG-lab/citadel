@@ -10,11 +10,8 @@ enum SidebarItem: Hashable {
     case logins
     case secureNotes
     case folder(String)
+    case tag(String)
     case trash
-    case passwordGenerator
-    case passwordHealth
-    case breachCheck
-    case auditLog
 }
 
 // MARK: - Main View
@@ -33,8 +30,6 @@ struct MainView: View {
     @State private var showingSettings = false
     @State private var showingReceiveShare = false
     @State private var showingFullBackup = false
-    @State private var showingVerifyBackup = false
-    @State private var showingRestoreBackup = false
     @State private var showingPasswordHealth = false
     @State private var showingAuditLog = false
     @State private var showingGenerator = false
@@ -47,16 +42,11 @@ struct MainView: View {
     @State private var showingImportResult = false
     @State private var showingExpiredAlert = false
 
-    // MARK: Backup
-
-    @State private var backupPassword = ""
-    @State private var backupMessage: String?
-
     // MARK: - Filtered entries
 
-    var filteredEntries: [VaultEntrySummary] {
+    private var filteredEntries: [VaultEntrySummary] {
         switch sidebarSelection {
-        case .allItems:
+        case .allItems, .none:
             return appState.entries
         case .favorites:
             return appState.entries.filter(\.isFavorite)
@@ -66,9 +56,26 @@ struct MainView: View {
             return appState.entries.filter { $0.entryType == "secure_note" }
         case .folder(let g):
             return appState.entries.filter { $0.group == g || $0.group.hasPrefix(g + "/") }
-        default:
-            return appState.entries
+        case .tag(let t):
+            return appState.entries.filter { $0.tagList.contains(t) }
+        case .trash:
+            return [] // Trash entries are not in appState.entries
         }
+    }
+
+    private var folders: [String] {
+        let groups = Set(appState.entries.map(\.group)).filter { !$0.isEmpty }
+        return groups.sorted()
+    }
+
+    private var allTags: [(tag: String, count: Int)] {
+        var counts: [String: Int] = [:]
+        for entry in appState.entries {
+            for tag in entry.tagList {
+                counts[tag, default: 0] += 1
+            }
+        }
+        return counts.sorted { $0.key < $1.key }.map { (tag: $0.key, count: $0.value) }
     }
 
     // MARK: - Body
@@ -76,13 +83,8 @@ struct MainView: View {
     var body: some View {
         @Bindable var appState = appState
         NavigationSplitView {
-            SidebarView(
-                selection: $sidebarSelection,
-                showingPasswordHealth: $showingPasswordHealth,
-                showingAuditLog: $showingAuditLog,
-                showingGenerator: $showingGenerator
-            )
-            .navigationSplitViewColumnWidth(min: 180, ideal: 220, max: 280)
+            sidebar
+                .navigationSplitViewColumnWidth(min: 180, ideal: 220, max: 280)
         } content: {
             EntryListView(
                 entries: filteredEntries,
@@ -108,7 +110,6 @@ struct MainView: View {
         }
         .toolbar {
             ToolbarItemGroup(placement: .primaryAction) {
-                // Vault switcher
                 Menu {
                     ForEach(appState.knownVaults) { vault in
                         Button {
@@ -180,6 +181,9 @@ struct MainView: View {
         .sheet(isPresented: $showingAuditLog) {
             AuditLogView()
         }
+        .sheet(isPresented: $showingGenerator) {
+            PasswordGeneratorView { _ in }
+        }
         // MARK: Alerts
         .alert("Backup", isPresented: $showingBackupResult) {
             Button("OK") {}
@@ -218,6 +222,122 @@ struct MainView: View {
         .onReceive(NotificationCenter.default.publisher(for: .citadelCopyUsername)) { _ in
             copySelectedUsername()
         }
+    }
+
+    // MARK: - Sidebar
+
+    @ViewBuilder
+    private var sidebar: some View {
+        List(selection: $sidebarSelection) {
+            // Vault header
+            HStack {
+                Image(systemName: "lock.shield.fill")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(Color.citadelAccent)
+                Text(appState.activeVaultName)
+                    .font(.system(size: 13, weight: .semibold))
+                    .lineLimit(1)
+                Spacer()
+                Button {
+                    appState.lockVault()
+                } label: {
+                    Image(systemName: "lock")
+                        .font(.system(size: 11))
+                        .foregroundStyle(Color.citadelSecondary)
+                }
+                .buttonStyle(.plain)
+                .help("Lock vault")
+            }
+            .listRowSeparator(.hidden)
+            .padding(.bottom, 2)
+
+            // Favorites
+            sidebarRow("Favorites", icon: "star.fill", color: .yellow, item: .favorites, count: appState.entries.filter(\.isFavorite).count)
+
+            // Categories
+            Section("Categories") {
+                sidebarRow("All Items", icon: "square.grid.2x2", color: .citadelAccent, item: .allItems, count: appState.entries.count)
+                sidebarRow("Logins", icon: "key.fill", color: .blue, item: .logins, count: appState.entries.filter { $0.entryType != "secure_note" }.count)
+                sidebarRow("Secure Notes", icon: "note.text", color: .purple, item: .secureNotes, count: appState.entries.filter { $0.entryType == "secure_note" }.count)
+            }
+
+            // Folders
+            if !folders.isEmpty {
+                Section("Folders") {
+                    ForEach(folders, id: \.self) { folder in
+                        let displayName = folder.split(separator: "/").last.map(String.init) ?? folder
+                        let count = appState.entries.filter { $0.group == folder || $0.group.hasPrefix(folder + "/") }.count
+                        sidebarRow(displayName, icon: "folder.fill", color: .orange, item: .folder(folder), count: count)
+                    }
+                }
+            }
+
+            // Tags
+            if !allTags.isEmpty {
+                Section("Tags") {
+                    ForEach(allTags, id: \.tag) { item in
+                        sidebarRow(item.tag, icon: "tag.fill", color: .teal, item: .tag(item.tag), count: item.count)
+                    }
+                }
+            }
+
+            // Tools (buttons, not selection items)
+            Section("Tools") {
+                sidebarButton("Password Generator", icon: "wand.and.stars", color: .pink) {
+                    showingGenerator = true
+                }
+                sidebarButton("Password Health", icon: "heart.text.square", color: .citadelSuccess) {
+                    showingPasswordHealth = true
+                }
+                sidebarButton("Breach Check", icon: "shield.slash", color: .citadelDanger) {
+                    showingPasswordHealth = true
+                }
+                sidebarButton("Audit Log", icon: "list.bullet.clipboard", color: .indigo) {
+                    showingAuditLog = true
+                }
+            }
+
+            // Trash
+            Section {
+                sidebarRow("Trash", icon: "trash", color: .gray, item: .trash, count: 0)
+            }
+        }
+        .listStyle(.sidebar)
+    }
+
+    @ViewBuilder
+    private func sidebarRow(_ title: String, icon: String, color: Color, item: SidebarItem, count: Int) -> some View {
+        Label {
+            HStack {
+                Text(title)
+                Spacer()
+                if count > 0 {
+                    Text("\(count)")
+                        .font(.system(size: 11))
+                        .foregroundStyle(Color.citadelSecondary)
+                }
+            }
+        } icon: {
+            Image(systemName: icon)
+                .foregroundStyle(color)
+                .frame(width: 18)
+        }
+        .tag(item)
+    }
+
+    @ViewBuilder
+    private func sidebarButton(_ title: String, icon: String, color: Color, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Label {
+                Text(title)
+            } icon: {
+                Image(systemName: icon)
+                    .foregroundStyle(color)
+                    .frame(width: 18)
+            }
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(.primary)
     }
 
     // MARK: - Actions
@@ -357,164 +477,8 @@ struct MainView: View {
     }
 }
 
-// MARK: - Sidebar View
-
-struct SidebarView: View {
-    @Environment(AppState.self) private var appState
-    @Binding var selection: SidebarItem?
-    @Binding var showingPasswordHealth: Bool
-    @Binding var showingAuditLog: Bool
-    @Binding var showingGenerator: Bool
-
-    @State private var categoriesExpanded = true
-    @State private var foldersExpanded = true
-    @State private var toolsExpanded = true
-
-    private var folders: [String] {
-        let groups = Set(appState.entries.map(\.group)).filter { !$0.isEmpty }
-        return groups.sorted()
-    }
-
-    private var favoritesCount: Int {
-        appState.entries.filter(\.isFavorite).count
-    }
-
-    private var loginsCount: Int {
-        appState.entries.filter { $0.entryType != "secure_note" }.count
-    }
-
-    private var secureNotesCount: Int {
-        appState.entries.filter { $0.entryType == "secure_note" }.count
-    }
-
-    private func folderCount(_ folder: String) -> Int {
-        appState.entries.filter { $0.group == folder || $0.group.hasPrefix(folder + "/") }.count
-    }
-
-    var body: some View {
-        List(selection: $selection) {
-            // Header area
-            VStack(alignment: .leading, spacing: 4) {
-                HStack {
-                    Image(systemName: "lock.shield.fill")
-                        .font(.system(size: 14, weight: .semibold))
-                        .foregroundStyle(Color.citadelAccent)
-                    Text(appState.activeVaultName)
-                        .font(.system(size: 13, weight: .semibold))
-                        .lineLimit(1)
-                    Spacer()
-                    Button {
-                        appState.lockVault()
-                    } label: {
-                        Image(systemName: "lock")
-                            .font(.system(size: 12))
-                            .foregroundStyle(Color.citadelSecondary)
-                    }
-                    .buttonStyle(.plain)
-                    .help("Lock vault")
-                }
-            }
-            .listRowSeparator(.hidden)
-            .padding(.bottom, 4)
-
-            // Favorites
-            Label("Favorites", systemImage: "star.fill")
-                .tag(SidebarItem.favorites)
-                .badge(favoritesCount)
-
-            // Categories section
-            Section {
-                DisclosureGroup(isExpanded: $categoriesExpanded) {
-                    Label("All Items", systemImage: "square.grid.2x2")
-                        .tag(SidebarItem.allItems)
-                        .badge(appState.entries.count)
-
-                    Label("Logins", systemImage: "key.fill")
-                        .tag(SidebarItem.logins)
-                        .badge(loginsCount)
-
-                    Label("Secure Notes", systemImage: "note.text")
-                        .tag(SidebarItem.secureNotes)
-                        .badge(secureNotesCount)
-                } label: {
-                    Text("Categories")
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(Color.citadelSecondary)
-                }
-            }
-
-            // Folders section
-            if !folders.isEmpty {
-                Section {
-                    DisclosureGroup(isExpanded: $foldersExpanded) {
-                        ForEach(folders, id: \.self) { folder in
-                            Label(folderDisplayName(folder), systemImage: "folder")
-                                .tag(SidebarItem.folder(folder))
-                                .badge(folderCount(folder))
-                        }
-                    } label: {
-                        Text("Folders")
-                            .font(.system(size: 11, weight: .semibold))
-                            .foregroundStyle(Color.citadelSecondary)
-                    }
-                }
-            }
-
-            // Tools section
-            Section {
-                DisclosureGroup(isExpanded: $toolsExpanded) {
-                    Button {
-                        showingGenerator = true
-                    } label: {
-                        Label("Password Generator", systemImage: "wand.and.stars")
-                    }
-                    .buttonStyle(.plain)
-
-                    Button {
-                        showingPasswordHealth = true
-                    } label: {
-                        Label("Password Health", systemImage: "heart.text.square")
-                    }
-                    .buttonStyle(.plain)
-
-                    Button {
-                        showingPasswordHealth = true
-                    } label: {
-                        Label("Breach Check", systemImage: "shield.slash")
-                    }
-                    .buttonStyle(.plain)
-
-                    Button {
-                        showingAuditLog = true
-                    } label: {
-                        Label("Audit Log", systemImage: "list.bullet.clipboard")
-                    }
-                    .buttonStyle(.plain)
-                } label: {
-                    Text("Tools")
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(Color.citadelSecondary)
-                }
-            }
-
-            // Trash
-            Label("Trash", systemImage: "trash")
-                .tag(SidebarItem.trash)
-        }
-        .listStyle(.sidebar)
-    }
-
-    private func folderDisplayName(_ path: String) -> String {
-        if let last = path.split(separator: "/").last {
-            return String(last)
-        }
-        return path
-    }
-}
-
 // MARK: - Full Backup Sheet
 
-/// Sheet for creating an encrypted full backup.
 struct FullBackupSheet: View {
     @Environment(AppState.self) private var appState
     @Environment(\.dismiss) private var dismiss

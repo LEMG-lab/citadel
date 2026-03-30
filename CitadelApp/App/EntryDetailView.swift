@@ -15,6 +15,12 @@ struct EntryDetailView: View {
     @State private var totpCode: String = ""
     @State private var totpSecondsRemaining: Int = 0
     @State private var totpTimer: Timer?
+    @State private var passwordHistory: [(password: String, date: Date)] = []
+    @State private var showPasswordHistory = false
+    @State private var largeTypeWindow = LargeTypeWindow()
+    @State private var attachments: [(name: String, size: Int)] = []
+    @State private var showAttachments = false
+    @State private var showingAttachmentPicker = false
 
     private var isSecureNote: Bool {
         entry?.entryType == "secure_note"
@@ -76,6 +82,21 @@ struct EntryDetailView: View {
                     if !entry.customFields.isEmpty {
                         customFieldsSection(entry)
                     }
+
+                    // Tags (from summary, since Citadel_Tags is a standard field)
+                    if let summary = appState.entries.first(where: { $0.id == entry.uuid }), !summary.tags.isEmpty {
+                        tagsSection(summary.tags)
+                    }
+                }
+
+                // ── Password History ──────────────────────────────
+                if !isSecureNote && !passwordHistory.isEmpty {
+                    passwordHistorySection
+                }
+
+                // ── Attachments ────────────────────────────────
+                if !attachments.isEmpty || true {
+                    attachmentsSection
                 }
 
                 // ── Expiry ──────────────────────────────────────
@@ -256,6 +277,18 @@ struct EntryDetailView: View {
                             .onEnded { _ in showPassword = false }
                     )
 
+                Button {
+                    largeTypeWindow.show(password: String(decoding: entry.password, as: UTF8.self))
+                } label: {
+                    Image(systemName: "textformat.size.larger")
+                        .font(.system(size: 12))
+                        .foregroundStyle(Color.citadelSecondary)
+                        .padding(6)
+                        .background(Color.citadelSecondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+                }
+                .buttonStyle(.plain)
+                .help("Large Type")
+
                 copyButton {
                     appState.clipboard.copyPassword(entry.password)
                 }
@@ -386,6 +419,154 @@ struct EntryDetailView: View {
         }
     }
 
+    // MARK: - Tags Section
+
+    @ViewBuilder
+    private func tagsSection(_ tagsString: String) -> some View {
+        let tags = tagsString.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
+        VStack(alignment: .leading, spacing: 8) {
+            SectionHeader(title: "Tags")
+                .padding(.top, 4)
+            HStack(spacing: 6) {
+                ForEach(tags, id: \.self) { tag in
+                    Text(tag)
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(Color.teal, in: Capsule())
+                }
+            }
+        }
+    }
+
+    // MARK: - Password History
+
+    @ViewBuilder
+    private var passwordHistorySection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Button {
+                showPasswordHistory.toggle()
+            } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: showPasswordHistory ? "chevron.down" : "chevron.right")
+                        .font(.system(size: 10, weight: .semibold))
+                    SectionHeader(title: "Password History (\(passwordHistory.count))")
+                }
+                .foregroundStyle(.primary)
+            }
+            .buttonStyle(.plain)
+
+            if showPasswordHistory {
+                ForEach(Array(passwordHistory.enumerated()), id: \.offset) { _, item in
+                    HStack(spacing: 10) {
+                        Text(String(repeating: "\u{2022}", count: 12))
+                            .font(.system(size: 13, design: .monospaced))
+                            .foregroundStyle(.primary.opacity(0.6))
+                            .lineLimit(1)
+
+                        Spacer()
+
+                        Text(item.date.formatted(.dateTime.month(.abbreviated).day().year().hour().minute()))
+                            .font(.system(size: 11))
+                            .foregroundStyle(Color.citadelSecondary)
+
+                        copyButton {
+                            appState.clipboard.copyPassword(Data(item.password.utf8))
+                        }
+                    }
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 8)
+                    .background(Color.cardBackground.opacity(0.6), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                    .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).stroke(Color.subtleSeparator.opacity(0.3), lineWidth: 0.5))
+                }
+            }
+        }
+    }
+
+    // MARK: - Attachments Section
+
+    @ViewBuilder
+    private var attachmentsSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Button {
+                    showAttachments.toggle()
+                } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: showAttachments ? "chevron.down" : "chevron.right")
+                            .font(.system(size: 10, weight: .semibold))
+                        SectionHeader(title: "Attachments (\(attachments.count))")
+                    }
+                    .foregroundStyle(.primary)
+                }
+                .buttonStyle(.plain)
+
+                Spacer()
+
+                Button {
+                    showingAttachmentPicker = true
+                } label: {
+                    Image(systemName: "plus.circle.fill")
+                        .font(.system(size: 15))
+                        .foregroundStyle(Color.citadelAccent)
+                }
+                .buttonStyle(.plain)
+                .help("Add attachment")
+                .fileImporter(isPresented: $showingAttachmentPicker, allowedContentTypes: [.item], allowsMultipleSelection: false) { result in
+                    guard case .success(let urls) = result, let url = urls.first else { return }
+                    addAttachment(from: url)
+                }
+            }
+
+            if showAttachments {
+                ForEach(attachments, id: \.name) { att in
+                    HStack(spacing: 10) {
+                        Image(systemName: "paperclip")
+                            .font(.system(size: 13))
+                            .foregroundStyle(Color.citadelSecondary)
+
+                        Text(att.name)
+                            .font(.system(size: 13))
+                            .lineLimit(1)
+
+                        Spacer()
+
+                        Text(formatBytes(att.size))
+                            .font(.system(size: 11))
+                            .foregroundStyle(Color.citadelSecondary)
+
+                        Button {
+                            openAttachment(att.name)
+                        } label: {
+                            Image(systemName: "arrow.down.circle")
+                                .font(.system(size: 13))
+                                .foregroundStyle(Color.citadelAccent)
+                                .padding(4)
+                        }
+                        .buttonStyle(.plain)
+                        .help("Save to disk")
+
+                        Button(role: .destructive) {
+                            deleteAttachment(att.name)
+                        } label: {
+                            Image(systemName: "trash")
+                                .font(.system(size: 12))
+                                .foregroundStyle(Color.citadelDanger)
+                                .padding(4)
+                        }
+                        .buttonStyle(.plain)
+                        .help("Remove attachment")
+                    }
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 8)
+                    .background(Color.cardBackground.opacity(0.6), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                    .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).stroke(Color.subtleSeparator.opacity(0.3), lineWidth: 0.5))
+                }
+            }
+        }
+    }
+
     // MARK: - Expiry Row
 
     @ViewBuilder
@@ -454,11 +635,16 @@ struct EntryDetailView: View {
 
     private func loadEntry() {
         showPassword = false
+        showPasswordHistory = false
         do {
             entry = try appState.engine.getEntry(uuid: entryID)
+            passwordHistory = (try? appState.engine.getEntryHistory(uuid: entryID)) ?? []
+            attachments = (try? appState.engine.listAttachments(uuid: entryID)) ?? []
             errorMessage = nil
         } catch {
             entry = nil
+            passwordHistory = []
+            attachments = []
             errorMessage = "Could not load entry"
         }
     }
@@ -498,6 +684,52 @@ struct EntryDetailView: View {
     private func updateTOTP(_ gen: TOTPGenerator) {
         totpCode = gen.code()
         totpSecondsRemaining = gen.secondsRemaining()
+    }
+
+    private func formatBytes(_ bytes: Int) -> String {
+        if bytes < 1024 { return "\(bytes) B" }
+        let kb = Double(bytes) / 1024.0
+        if kb < 1024 { return String(format: "%.1f KB", kb) }
+        let mb = kb / 1024.0
+        return String(format: "%.1f MB", mb)
+    }
+
+    private func addAttachment(from url: URL) {
+        guard url.startAccessingSecurityScopedResource() else { return }
+        defer { url.stopAccessingSecurityScopedResource() }
+        do {
+            let data = try Data(contentsOf: url)
+            try appState.engine.addAttachment(uuid: entryID, name: url.lastPathComponent, data: data)
+            try appState.save()
+            try appState.refreshEntries()
+            attachments = (try? appState.engine.listAttachments(uuid: entryID)) ?? []
+        } catch {
+            errorMessage = "Could not add attachment"
+        }
+    }
+
+    private func openAttachment(_ name: String) {
+        do {
+            let data = try appState.engine.getAttachment(uuid: entryID, name: name)
+            let tmpDir = FileManager.default.temporaryDirectory.appendingPathComponent("citadel-attachments", isDirectory: true)
+            try FileManager.default.createDirectory(at: tmpDir, withIntermediateDirectories: true)
+            let fileURL = tmpDir.appendingPathComponent(name)
+            try data.write(to: fileURL)
+            NSWorkspace.shared.open(fileURL)
+        } catch {
+            errorMessage = "Could not open attachment"
+        }
+    }
+
+    private func deleteAttachment(_ name: String) {
+        do {
+            try appState.engine.removeAttachment(uuid: entryID, name: name)
+            try appState.save()
+            try appState.refreshEntries()
+            attachments = (try? appState.engine.listAttachments(uuid: entryID)) ?? []
+        } catch {
+            errorMessage = "Could not remove attachment"
+        }
     }
 
     private func deleteEntry() {

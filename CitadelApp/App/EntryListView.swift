@@ -12,6 +12,7 @@ enum SortOrder: String, CaseIterable {
 
 /// Middle column: searchable, sortable list of vault entries.
 struct EntryListView: View {
+    @Environment(AppState.self) private var appState
     let entries: [VaultEntrySummary]
     @Binding var selectedEntryID: String?
 
@@ -131,6 +132,7 @@ struct EntryListView: View {
                 HStack(spacing: 4) {
                     Text(entry.title.isEmpty ? "(Untitled)" : entry.title)
                         .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(.primary)
                         .lineLimit(1)
                     if entry.isFavorite {
                         Image(systemName: "star.fill")
@@ -156,17 +158,34 @@ struct EntryListView: View {
 
             Spacer()
 
-            if let expiry = entry.expiryDate {
-                if expiry < Date() {
-                    Circle()
-                        .fill(Color.citadelDanger)
-                        .frame(width: 7, height: 7)
-                        .help("Expired")
-                } else if expiry < Date().addingTimeInterval(7 * 24 * 3600) {
-                    Circle()
-                        .fill(Color.citadelWarning)
-                        .frame(width: 7, height: 7)
-                        .help("Expiring soon")
+            if entry.attachmentCount > 0 {
+                Image(systemName: "paperclip")
+                    .font(.system(size: 11))
+                    .foregroundStyle(Color.citadelSecondary)
+                    .help("\(entry.attachmentCount) attachment\(entry.attachmentCount == 1 ? "" : "s")")
+            }
+
+            // Alert indicator dots
+            let alerts = appState.entryAlerts[entry.id]
+            HStack(spacing: 3) {
+                if alerts?.breached == true {
+                    Circle().fill(Color.citadelDanger).frame(width: 7, height: 7).help("Breached password")
+                }
+                if alerts?.weak == true {
+                    Circle().fill(Color.orange).frame(width: 7, height: 7).help("Weak password")
+                }
+                if alerts?.old == true {
+                    Circle().fill(Color.citadelWarning).frame(width: 7, height: 7).help("Old password (>180 days)")
+                }
+                if alerts?.missingTOTP == true {
+                    Circle().fill(Color.citadelAccent).frame(width: 7, height: 7).help("Missing TOTP")
+                }
+                if let expiry = entry.expiryDate {
+                    if expiry < Date() {
+                        Circle().fill(Color.citadelDanger).frame(width: 7, height: 7).help("Expired")
+                    } else if expiry < Date().addingTimeInterval(7 * 24 * 3600) {
+                        Circle().fill(Color.citadelWarning).frame(width: 7, height: 7).help("Expiring soon")
+                    }
                 }
             }
         }

@@ -2,6 +2,14 @@ import Foundation
 import Observation
 import CitadelCore
 
+/// Alert flags for a single entry in the entry list.
+struct EntryAlertFlags: Sendable {
+    var breached = false
+    var weak = false
+    var old = false
+    var missingTOTP = false
+}
+
 /// Central application state. Manages vault lifecycle, entry data, and security managers.
 @MainActor
 @Observable
@@ -32,6 +40,9 @@ final class AppState {
 
     /// Number of entries that have expired or are expiring within 7 days.
     var expiredEntriesMessage: String?
+
+    /// Per-entry alert indicators (breached, weak, old, missing TOTP).
+    var entryAlerts: [String: EntryAlertFlags] = [:]
 
     /// Tracked biometric state — SwiftUI observes these instead of reading
     /// BiometricManager directly (which is not @Observable).
@@ -69,6 +80,7 @@ final class AppState {
     let auditLogger: AuditLogger
     let biometricManager: BiometricManager
     @ObservationIgnored var statusBar: StatusBarController?
+    @ObservationIgnored var quickAccess: QuickAccessPanel?
 
     /// Password accessor for biometric enrollment (read-only copy).
     var currentPasswordForBiometric: Data? { currentPassword }
@@ -122,6 +134,8 @@ final class AppState {
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
             self.statusBar = StatusBarController(appState: self)
+            self.quickAccess = QuickAccessPanel(appState: self)
+            self.quickAccess?.registerGlobalShortcut()
         }
     }
 
@@ -224,13 +238,14 @@ final class AppState {
         biometricManager.recordFullAuth()
         auditLogger.log(.unlock)
         checkExpiredEntries()
+        computeEntryAlerts()
         statusBar?.refresh()
     }
 
-    func unlockAsync(password: Data, keyfilePath: String? = nil) async throws {
+    func unlockAsync(password: Data, keyfilePath: String? = nil, vaultPathOverride: String? = nil) async throws {
         isLoading = true
         defer { isLoading = false }
-        let path = vaultPath
+        let path = vaultPathOverride ?? vaultPath
         let eng = engine
         try await Task.detached {
             try eng.open(path: path, password: password, keyfilePath: keyfilePath)
@@ -244,6 +259,7 @@ final class AppState {
         biometricManager.recordFullAuth()
         auditLogger.log(.unlock)
         checkExpiredEntries()
+        computeEntryAlerts()
         statusBar?.refresh()
     }
 
@@ -298,6 +314,7 @@ final class AppState {
         currentPassword = nil
         currentKeyfilePath = nil
         entries = []
+        entryAlerts = [:]
         selectedEntryID = nil
         errorMessage = nil
         expiredEntriesMessage = nil
@@ -318,6 +335,7 @@ final class AppState {
 
     func refreshEntries() throws {
         entries = try engine.listEntries()
+        computeEntryAlerts()
         statusBar?.refresh()
     }
 
@@ -331,6 +349,67 @@ final class AppState {
             expiredEntriesMessage = "\(expired) password\(expired == 1 ? " has" : "s have") expired"
         } else {
             expiredEntriesMessage = nil
+        }
+    }
+
+    /// Compute alert indicators for all entries (async, called after unlock).
+    func computeEntryAlerts() {
+        let currentEntries = entries
+        let eng = engine
+        Task {
+            var alerts: [String: EntryAlertFlags] = [:]
+            let now = Date()
+            let sixMonthsAgo = now.addingTimeInterval(-180 * 24 * 3600)
+
+            for summary in currentEntries {
+                var flags = EntryAlertFlags()
+
+                // Skip secure notes
+                if summary.entryType == "secure_note" {
+                    alerts[summary.id] = flags
+                    continue
+                }
+
+                // Get password for analysis
+                if let detail = try? eng.getEntry(uuid: summary.id) {
+                    let pwString = String(decoding: detail.password, as: UTF8.self)
+                    // Weak password check (< 40 bits entropy)
+                    let entropy = PasswordStrength.entropy(of: pwString)
+                    if entropy < 40 && !pwString.isEmpty {
+                        flags.weak = true
+                    }
+                }
+
+                // Old password check (> 180 days)
+                if let modified = summary.lastModified, modified < sixMonthsAgo {
+                    flags.old = true
+                }
+
+                // Missing TOTP check (only for login entries)
+                if summary.entryType != "secure_note" {
+                    if let detail = try? eng.getEntry(uuid: summary.id), detail.otpURI.isEmpty {
+                        flags.missingTOTP = true
+                    }
+                }
+
+                alerts[summary.id] = flags
+            }
+
+            // Check breaches if user has consented
+            if breachChecker.hasConsented {
+                var passwords: [(id: String, title: String, password: Data)] = []
+                for summary in currentEntries where summary.entryType != "secure_note" {
+                    if let detail = try? eng.getEntry(uuid: summary.id), !detail.password.isEmpty {
+                        passwords.append((id: summary.id, title: summary.title, password: detail.password))
+                    }
+                }
+                let results = await breachChecker.checkAll(entries: passwords)
+                for result in results where result.breachCount > 0 {
+                    alerts[result.id, default: EntryAlertFlags()].breached = true
+                }
+            }
+
+            self.entryAlerts = alerts
         }
     }
 

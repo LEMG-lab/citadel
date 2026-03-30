@@ -36,6 +36,7 @@ struct EntryEditView: View {
     @State private var errorMessage: String?
     @State private var entryType = "password"
     @State private var customFields: [EditableCustomField] = []
+    @State private var tagsText = ""
     @State private var selectedTemplate: EntryTemplate = .login
     @State private var templateApplied = false
 
@@ -77,6 +78,7 @@ struct EntryEditView: View {
                     }
 
                     expirationSection
+                    tagsSection
                     customFieldsSection
 
                     if let msg = errorMessage {
@@ -331,6 +333,29 @@ struct EntryEditView: View {
         }
     }
 
+    // MARK: - Tags
+
+    @ViewBuilder
+    private var tagsSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            SectionHeader(title: "Tags")
+            styledField("Comma-separated tags (e.g. work, finance)", text: $tagsText, icon: "tag")
+            if !tagsText.isEmpty {
+                let parsed = tagsText.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
+                HStack(spacing: 6) {
+                    ForEach(parsed, id: \.self) { tag in
+                        Text(tag)
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 3)
+                            .background(Color.teal, in: Capsule())
+                    }
+                }
+            }
+        }
+    }
+
     // MARK: - Custom Fields
 
     @ViewBuilder
@@ -467,6 +492,10 @@ struct EntryEditView: View {
                 hasExpiry = true
                 expiryDate = exp
             }
+            // Load tags from entry summary (Citadel_Tags is a standard field, not in customFields)
+            if let summary = appState.entries.first(where: { $0.id == entry.uuid }) {
+                tagsText = summary.tags
+            }
             customFields = entry.customFields.map {
                 EditableCustomField(key: $0.key, value: $0.value, isProtected: $0.isProtected)
             }
@@ -498,6 +527,11 @@ struct EntryEditView: View {
                         value: field.value, isProtected: field.isProtected
                     )
                 }
+                // Save tags
+                let cleanTags = tagsText.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }.joined(separator: ",")
+                if !cleanTags.isEmpty {
+                    try appState.engine.setCustomField(uuid: uuid, key: "Citadel_Tags", value: cleanTags, isProtected: false)
+                }
                 try appState.save()
                 try appState.refreshEntries()
                 appState.selectedEntryID = uuid
@@ -508,7 +542,7 @@ struct EntryEditView: View {
                     otpURI: otpURI, expiryDate: expiry
                 )
                 let newKeys = Set(customFields.filter { !$0.key.isEmpty }.map(\.key))
-                for old in entry.customFields {
+                for old in entry.customFields where old.key != "Citadel_Tags" {
                     if !newKeys.contains(old.key) {
                         try appState.engine.removeCustomField(uuid: entry.uuid, key: old.key)
                     }
@@ -518,6 +552,13 @@ struct EntryEditView: View {
                         uuid: entry.uuid, key: field.key,
                         value: field.value, isProtected: field.isProtected
                     )
+                }
+                // Save tags
+                let editCleanTags = tagsText.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }.joined(separator: ",")
+                if editCleanTags.isEmpty {
+                    try appState.engine.removeCustomField(uuid: entry.uuid, key: "Citadel_Tags")
+                } else {
+                    try appState.engine.setCustomField(uuid: entry.uuid, key: "Citadel_Tags", value: editCleanTags, isProtected: false)
                 }
                 try appState.save()
                 try appState.refreshEntries()

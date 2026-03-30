@@ -162,9 +162,11 @@ public final class VaultEngine: @unchecked Sendable {
                 url: cString(item.url),
                 group: cString(item.group),
                 entryType: cString(item.entry_type),
+                tags: cString(item.tags),
                 expiryDate: item.expiry_time > 0 ? Date(timeIntervalSince1970: TimeInterval(item.expiry_time)) : nil,
                 lastModified: item.last_modified > 0 ? Date(timeIntervalSince1970: TimeInterval(item.last_modified)) : nil,
-                isFavorite: item.is_favorite
+                isFavorite: item.is_favorite,
+                attachmentCount: Int(item.attachment_count)
             ))
         }
         return entries
@@ -341,6 +343,30 @@ public final class VaultEngine: @unchecked Sendable {
         return Int(count)
     }
 
+    /// Get password history for an entry. Returns (password as string, date) pairs.
+    public func getEntryHistory(uuid: String) throws -> [(password: String, date: Date)] {
+        lock.lock()
+        defer { lock.unlock() }
+        let h = try _requireHandle()
+        var listPtr: UnsafeMutablePointer<CHistoryList>?
+        let result = uuid.withCString { cUuid in
+            vault_get_entry_history(h, cUuid, &listPtr)
+        }
+        try check(result)
+
+        guard let list = listPtr?.pointee else { return [] }
+        defer { history_list_free(listPtr) }
+
+        var items: [(password: String, date: Date)] = []
+        for i in 0..<Int(list.count) {
+            let item = list.items.advanced(by: i).pointee
+            let pw = cString(item.password)
+            let date = item.timestamp > 0 ? Date(timeIntervalSince1970: TimeInterval(item.timestamp)) : Date.distantPast
+            items.append((password: pw, date: date))
+        }
+        return items
+    }
+
     /// Set or clear the favorite flag on an entry.
     public func setFavorite(uuid: String, favorite: Bool) throws {
         lock.lock()
@@ -402,6 +428,82 @@ public final class VaultEngine: @unchecked Sendable {
             }
         }
         return groups
+    }
+
+    // MARK: - Attachments
+
+    /// List attachments on an entry. Returns (name, sizeBytes) pairs.
+    public func listAttachments(uuid: String) throws -> [(name: String, size: Int)] {
+        lock.lock()
+        defer { lock.unlock() }
+        let h = try _requireHandle()
+        var listPtr: UnsafeMutablePointer<CAttachmentList>?
+        let result = uuid.withCString { cUuid in
+            vault_list_attachments(h, cUuid, &listPtr)
+        }
+        try check(result)
+
+        guard let list = listPtr?.pointee else { return [] }
+        defer { attachment_list_free(listPtr) }
+
+        var items: [(name: String, size: Int)] = []
+        for i in 0..<Int(list.count) {
+            let item = list.items.advanced(by: i).pointee
+            items.append((name: cString(item.name), size: Int(item.size)))
+        }
+        return items
+    }
+
+    /// Get an attachment's raw data by name.
+    public func getAttachment(uuid: String, name: String) throws -> Data {
+        lock.lock()
+        defer { lock.unlock() }
+        let h = try _requireHandle()
+        var dataPtr: UnsafeMutablePointer<CAttachmentData>?
+        let result = uuid.withCString { cUuid in
+            name.withCString { cName in
+                vault_get_attachment(h, cUuid, cName, &dataPtr)
+            }
+        }
+        try check(result)
+
+        guard let att = dataPtr?.pointee else { return Data() }
+        defer { attachment_data_free(dataPtr) }
+
+        if let ptr = att.data, att.len > 0 {
+            return Data(bytes: ptr, count: Int(att.len))
+        }
+        return Data()
+    }
+
+    /// Add an attachment to an entry.
+    public func addAttachment(uuid: String, name: String, data: Data) throws {
+        try Self.validateFFIString(name, field: "attachment name")
+        lock.lock()
+        defer { lock.unlock() }
+        let h = try _requireHandle()
+        let result = uuid.withCString { cUuid in
+            name.withCString { cName in
+                data.withUnsafeBytes { buf -> VaultResult in
+                    let ptr = buf.baseAddress?.assumingMemoryBound(to: UInt8.self)
+                    return vault_add_attachment(h, cUuid, cName, ptr, UInt64(data.count))
+                }
+            }
+        }
+        try check(result)
+    }
+
+    /// Remove an attachment from an entry by name.
+    public func removeAttachment(uuid: String, name: String) throws {
+        lock.lock()
+        defer { lock.unlock() }
+        let h = try _requireHandle()
+        let result = uuid.withCString { cUuid in
+            name.withCString { cName in
+                vault_remove_attachment(h, cUuid, cName)
+            }
+        }
+        try check(result)
     }
 
     // MARK: - Password Generation

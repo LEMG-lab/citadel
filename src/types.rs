@@ -23,11 +23,15 @@ pub struct CEntryListItem {
     pub url: *mut c_char,
     pub group: *mut c_char,
     pub entry_type: *mut c_char,
+    /// Comma-separated tags. Null or empty if no tags.
+    pub tags: *mut c_char,
     /// Unix timestamp of expiry. 0 means no expiry set.
     pub expiry_time: i64,
     /// Unix timestamp of last modification. 0 if unknown.
     pub last_modified: i64,
     pub is_favorite: bool,
+    /// Number of file attachments on this entry.
+    pub attachment_count: u32,
 }
 
 /// Owned list of entry summaries, allocated by Rust, freed by `entry_list_free`.
@@ -66,6 +70,42 @@ pub struct CEntryData {
     /// Unix timestamp of last modification. 0 if unknown.
     pub last_modified: i64,
     pub is_favorite: bool,
+}
+
+/// A single password history item.
+#[repr(C)]
+pub struct CHistoryItem {
+    pub password: *mut c_char,
+    /// Unix timestamp of when this password was set.
+    pub timestamp: i64,
+}
+
+/// List of password history items, allocated by Rust, freed by `history_list_free`.
+#[repr(C)]
+pub struct CHistoryList {
+    pub items: *mut CHistoryItem,
+    pub count: u32,
+}
+
+/// A single attachment info item (name + size).
+#[repr(C)]
+pub struct CAttachmentInfo {
+    pub name: *mut c_char,
+    pub size: u64,
+}
+
+/// List of attachment info items, allocated by Rust, freed by `attachment_list_free`.
+#[repr(C)]
+pub struct CAttachmentList {
+    pub items: *mut CAttachmentInfo,
+    pub count: u32,
+}
+
+/// Raw attachment data, allocated by Rust, freed by `attachment_data_free`.
+#[repr(C)]
+pub struct CAttachmentData {
+    pub data: *mut u8,
+    pub len: u64,
 }
 
 /// Bitmask flags for password character sets.

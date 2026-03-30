@@ -292,9 +292,11 @@ pub extern "C" fn vault_list_entries(
                 url: str_to_c(&s.url),
                 group: str_to_c(&s.group),
                 entry_type: str_to_c(&s.entry_type),
+                tags: str_to_c(&s.tags),
                 expiry_time: s.expiry_time,
                 last_modified: s.last_modified,
                 is_favorite: s.is_favorite,
+                attachment_count: s.attachment_count,
             })
             .collect();
 
@@ -566,6 +568,241 @@ pub extern "C" fn vault_empty_recyclebin(
 }
 
 // ---------------------------------------------------------------------------
+// Password history
+// ---------------------------------------------------------------------------
+
+/// Get the password history for an entry. Returns a list of (password, timestamp) pairs.
+/// Free with `history_list_free`.
+#[no_mangle]
+pub extern "C" fn vault_get_entry_history(
+    handle: *mut c_void,
+    uuid_str: *const c_char,
+    list_out: *mut *mut CHistoryList,
+) -> VaultResult {
+    if handle.is_null() || uuid_str.is_null() || list_out.is_null() {
+        return VaultResult::InternalError;
+    }
+    let result = catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let state = unsafe { &*(handle as *const VaultState) };
+        let uuid_s = unsafe { cstr_to_str(uuid_str) };
+        let uuid = match uuid::Uuid::parse_str(uuid_s) {
+            Ok(u) => u,
+            Err(_) => return VaultResult::InternalError,
+        };
+        match state.get_entry_history(uuid) {
+            Ok(items) => {
+                let count = items.len() as u32;
+                let c_items: Vec<CHistoryItem> = items.iter().map(|i| CHistoryItem {
+                    password: str_to_c(&i.password),
+                    timestamp: i.timestamp,
+                }).collect();
+                let items_ptr = if c_items.is_empty() {
+                    std::ptr::null_mut()
+                } else {
+                    let mut boxed = c_items.into_boxed_slice();
+                    let ptr = boxed.as_mut_ptr();
+                    std::mem::forget(boxed);
+                    ptr
+                };
+                let list = Box::new(CHistoryList { items: items_ptr, count });
+                unsafe { *list_out = Box::into_raw(list); }
+                VaultResult::Ok
+            }
+            Err(e) => e,
+        }
+    }));
+    result.unwrap_or(VaultResult::InternalError)
+}
+
+/// Free a history list returned by `vault_get_entry_history`.
+#[no_mangle]
+pub extern "C" fn history_list_free(list: *mut CHistoryList) {
+    if list.is_null() { return; }
+    let _ = catch_unwind(std::panic::AssertUnwindSafe(|| unsafe {
+        let list = Box::from_raw(list);
+        if !list.items.is_null() && list.count > 0 {
+            let items = Vec::from_raw_parts(list.items, list.count as usize, list.count as usize);
+            for item in items {
+                free_c_string(item.password);
+            }
+        }
+    }));
+}
+
+// ---------------------------------------------------------------------------
+// Attachments
+// ---------------------------------------------------------------------------
+
+/// List attachments on an entry. Returns a list of (name, size) pairs.
+/// Free with `attachment_list_free`.
+#[no_mangle]
+pub extern "C" fn vault_list_attachments(
+    handle: *mut c_void,
+    uuid_str: *const c_char,
+    list_out: *mut *mut CAttachmentList,
+) -> VaultResult {
+    if handle.is_null() || uuid_str.is_null() || list_out.is_null() {
+        return VaultResult::InternalError;
+    }
+    let result = catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let state = unsafe { &*(handle as *const VaultState) };
+        let uuid_s = unsafe { cstr_to_str(uuid_str) };
+        let uuid = match uuid::Uuid::parse_str(uuid_s) {
+            Ok(u) => u,
+            Err(_) => return VaultResult::InternalError,
+        };
+        match state.list_attachments(uuid) {
+            Ok(items) => {
+                let count = items.len() as u32;
+                let c_items: Vec<CAttachmentInfo> = items.iter().map(|(name, size)| CAttachmentInfo {
+                    name: str_to_c(name),
+                    size: *size as u64,
+                }).collect();
+                let items_ptr = if c_items.is_empty() {
+                    std::ptr::null_mut()
+                } else {
+                    let mut boxed = c_items.into_boxed_slice();
+                    let ptr = boxed.as_mut_ptr();
+                    std::mem::forget(boxed);
+                    ptr
+                };
+                let list = Box::new(CAttachmentList { items: items_ptr, count });
+                unsafe { *list_out = Box::into_raw(list); }
+                VaultResult::Ok
+            }
+            Err(e) => e,
+        }
+    }));
+    result.unwrap_or(VaultResult::InternalError)
+}
+
+/// Get an attachment's raw data by name.
+/// Free with `attachment_data_free`.
+#[no_mangle]
+pub extern "C" fn vault_get_attachment(
+    handle: *mut c_void,
+    uuid_str: *const c_char,
+    name: *const c_char,
+    data_out: *mut *mut CAttachmentData,
+) -> VaultResult {
+    if handle.is_null() || uuid_str.is_null() || name.is_null() || data_out.is_null() {
+        return VaultResult::InternalError;
+    }
+    let result = catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let state = unsafe { &*(handle as *const VaultState) };
+        let uuid_s = unsafe { cstr_to_str(uuid_str) };
+        let uuid = match uuid::Uuid::parse_str(uuid_s) {
+            Ok(u) => u,
+            Err(_) => return VaultResult::InternalError,
+        };
+        let name_s = unsafe { cstr_to_str(name) };
+        match state.get_attachment(uuid, name_s) {
+            Ok(data) => {
+                let len = data.len() as u64;
+                let data_ptr = if data.is_empty() {
+                    std::ptr::null_mut()
+                } else {
+                    let boxed = data.into_boxed_slice();
+                    Box::into_raw(boxed) as *mut u8
+                };
+                let out = Box::new(CAttachmentData { data: data_ptr, len });
+                unsafe { *data_out = Box::into_raw(out); }
+                VaultResult::Ok
+            }
+            Err(e) => e,
+        }
+    }));
+    result.unwrap_or(VaultResult::InternalError)
+}
+
+/// Add an attachment to an entry.
+#[no_mangle]
+pub extern "C" fn vault_add_attachment(
+    handle: *mut c_void,
+    uuid_str: *const c_char,
+    name: *const c_char,
+    data: *const u8,
+    data_len: u64,
+) -> VaultResult {
+    if handle.is_null() || uuid_str.is_null() || name.is_null() {
+        return VaultResult::InternalError;
+    }
+    let result = catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let state = unsafe { &mut *(handle as *mut VaultState) };
+        let uuid_s = unsafe { cstr_to_str(uuid_str) };
+        let uuid = match uuid::Uuid::parse_str(uuid_s) {
+            Ok(u) => u,
+            Err(_) => return VaultResult::InternalError,
+        };
+        let name_s = unsafe { cstr_to_str(name) };
+        let slice = if data.is_null() || data_len == 0 {
+            &[]
+        } else {
+            unsafe { slice::from_raw_parts(data, data_len as usize) }
+        };
+        match state.add_attachment(uuid, name_s, slice) {
+            Ok(()) => VaultResult::Ok,
+            Err(e) => e,
+        }
+    }));
+    result.unwrap_or(VaultResult::InternalError)
+}
+
+/// Remove an attachment from an entry by name.
+#[no_mangle]
+pub extern "C" fn vault_remove_attachment(
+    handle: *mut c_void,
+    uuid_str: *const c_char,
+    name: *const c_char,
+) -> VaultResult {
+    if handle.is_null() || uuid_str.is_null() || name.is_null() {
+        return VaultResult::InternalError;
+    }
+    let result = catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let state = unsafe { &mut *(handle as *mut VaultState) };
+        let uuid_s = unsafe { cstr_to_str(uuid_str) };
+        let uuid = match uuid::Uuid::parse_str(uuid_s) {
+            Ok(u) => u,
+            Err(_) => return VaultResult::InternalError,
+        };
+        let name_s = unsafe { cstr_to_str(name) };
+        match state.remove_attachment(uuid, name_s) {
+            Ok(()) => VaultResult::Ok,
+            Err(e) => e,
+        }
+    }));
+    result.unwrap_or(VaultResult::InternalError)
+}
+
+/// Free an attachment list returned by `vault_list_attachments`.
+#[no_mangle]
+pub extern "C" fn attachment_list_free(list: *mut CAttachmentList) {
+    if list.is_null() { return; }
+    let _ = catch_unwind(std::panic::AssertUnwindSafe(|| unsafe {
+        let list = Box::from_raw(list);
+        if !list.items.is_null() && list.count > 0 {
+            let items = Vec::from_raw_parts(list.items, list.count as usize, list.count as usize);
+            for item in items {
+                free_c_string(item.name);
+            }
+        }
+    }));
+}
+
+/// Free attachment data returned by `vault_get_attachment`.
+#[no_mangle]
+pub extern "C" fn attachment_data_free(data: *mut CAttachmentData) {
+    if data.is_null() { return; }
+    let _ = catch_unwind(std::panic::AssertUnwindSafe(|| unsafe {
+        let data = Box::from_raw(data);
+        if !data.data.is_null() && data.len > 0 {
+            let raw = std::ptr::slice_from_raw_parts_mut(data.data, data.len as usize);
+            drop(Box::from_raw(raw));
+        }
+    }));
+}
+
+// ---------------------------------------------------------------------------
 // Favorites & custom fields
 // ---------------------------------------------------------------------------
 
@@ -717,6 +954,7 @@ pub extern "C" fn entry_list_free(list: *mut CEntryList) {
                 free_c_string(item.url);
                 free_c_string(item.group);
                 free_c_string(item.entry_type);
+                free_c_string(item.tags);
             }
         }
     }));

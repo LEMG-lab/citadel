@@ -8,11 +8,20 @@ public struct VaultEntrySummary: Identifiable, Sendable {
     public let url: String
     public let group: String
     public let entryType: String
+    /// Comma-separated tags string from Citadel_Tags custom field.
+    public let tags: String
     /// Expiry date, or nil if no expiry is set.
     public let expiryDate: Date?
     /// Last modification date, or nil if unknown.
     public let lastModified: Date?
     public let isFavorite: Bool
+    /// Number of file attachments on this entry.
+    public let attachmentCount: Int
+
+    /// Parsed array of individual tag strings.
+    public var tagList: [String] {
+        tags.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
+    }
 }
 
 /// A custom field on an entry.

@@ -4,6 +4,7 @@ use keepass::config::{
 };
 use keepass::db::{Entry, Group, History, MemoryProtection};
 use keepass::{Database, DatabaseKey};
+use secrecy::ExposeSecret;
 use zeroize::{Zeroize, Zeroizing};
 
 use crate::types::VaultResult;
@@ -405,6 +406,66 @@ impl VaultState {
         Ok(())
     }
 
+    /// List attachments on an entry. Returns (name, size_bytes) pairs.
+    pub fn list_attachments(&self, uuid: uuid::Uuid) -> Result<Vec<(String, usize)>, VaultResult> {
+        let entry = self.db.root.entry_by_uuid(uuid)
+            .ok_or(VaultResult::InternalError)?;
+        Ok(entry.attachments.iter().map(|(name, att)| {
+            let size = match &att.data {
+                keepass::db::Value::Unprotected(data) => data.len(),
+                keepass::db::Value::Protected(sb) => sb.expose_secret().len(),
+            };
+            (name.clone(), size)
+        }).collect())
+    }
+
+    /// Get an attachment's data by name.
+    pub fn get_attachment(&self, uuid: uuid::Uuid, name: &str) -> Result<Vec<u8>, VaultResult> {
+        let entry = self.db.root.entry_by_uuid(uuid)
+            .ok_or(VaultResult::InternalError)?;
+        let att = entry.attachments.get(name)
+            .ok_or(VaultResult::InternalError)?;
+        let data = match &att.data {
+            keepass::db::Value::Unprotected(data) => data.clone(),
+            keepass::db::Value::Protected(sb) => sb.expose_secret().to_vec(),
+        };
+        Ok(data)
+    }
+
+    /// Add an attachment to an entry.
+    pub fn add_attachment(&mut self, uuid: uuid::Uuid, name: &str, data: &[u8]) -> Result<(), VaultResult> {
+        let entry = self.db.root.entry_by_uuid_mut(uuid)
+            .ok_or(VaultResult::InternalError)?;
+        entry.attachments.insert(
+            name.to_string(),
+            keepass::db::Attachment { data: keepass::db::Value::Unprotected(data.to_vec()) },
+        );
+        Ok(())
+    }
+
+    /// Remove an attachment from an entry by name.
+    pub fn remove_attachment(&mut self, uuid: uuid::Uuid, name: &str) -> Result<(), VaultResult> {
+        let entry = self.db.root.entry_by_uuid_mut(uuid)
+            .ok_or(VaultResult::InternalError)?;
+        entry.attachments.remove(name);
+        Ok(())
+    }
+
+    /// Get the password history for an entry. Returns a list of (password, timestamp) pairs.
+    pub fn get_entry_history(&self, uuid: uuid::Uuid) -> Result<Vec<HistoryItem>, VaultResult> {
+        let entry = self.db.root.entry_by_uuid(uuid)
+            .ok_or(VaultResult::InternalError)?;
+        let mut items = Vec::new();
+        if let Some(history) = &entry.history {
+            for h_entry in history.get_entries() {
+                let password = h_entry.get_password().unwrap_or("").to_string();
+                let timestamp = entry_last_modified(h_entry);
+                items.push(HistoryItem { password, timestamp });
+            }
+        }
+        Ok(items)
+    }
+
     /// Soft-delete an entry by UUID: move to Recycle Bin and record a DeletedObject.
     pub fn delete_entry(&mut self, uuid: uuid::Uuid) -> Result<(), VaultResult> {
         // Extract the entry from wherever it lives
@@ -471,11 +532,20 @@ pub struct EntrySummary {
     pub url: String,
     pub group: String,
     pub entry_type: String,
+    /// Comma-separated tags from the Citadel_Tags custom field.
+    pub tags: String,
     /// Unix timestamp of expiry. 0 if expiry is not enabled.
     pub expiry_time: i64,
     /// Unix timestamp of last modification. 0 if unknown.
     pub last_modified: i64,
     pub is_favorite: bool,
+    /// Number of file attachments on this entry.
+    pub attachment_count: u32,
+}
+
+pub struct HistoryItem {
+    pub password: String,
+    pub timestamp: i64,
 }
 
 pub struct CustomField {
@@ -510,9 +580,11 @@ fn collect_entries(group: &Group, out: &mut Vec<EntrySummary>, skip_group: uuid:
             url: entry.get_url().unwrap_or("").to_string(),
             group: path.to_string(),
             entry_type: entry.get("Citadel_EntryType").unwrap_or("").to_string(),
+            tags: entry.get("Citadel_Tags").unwrap_or("").to_string(),
             expiry_time: entry_expiry_timestamp(entry),
             last_modified: entry_last_modified(entry),
             is_favorite: entry.get("Citadel_Favorite").map_or(false, |v| v == "true"),
+            attachment_count: entry.attachments.len() as u32,
         });
     }
     for child in &group.groups {
@@ -706,7 +778,7 @@ fn entry_last_modified(entry: &Entry) -> i64 {
 /// Standard fields to exclude when collecting custom fields.
 const STANDARD_FIELDS: &[&str] = &[
     "Title", "UserName", "Password", "URL", "Notes", "otp",
-    "Citadel_Favorite", "Citadel_EntryType",
+    "Citadel_Favorite", "Citadel_EntryType", "Citadel_Tags",
 ];
 
 /// Collect all non-standard fields from an entry as custom fields.

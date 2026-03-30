@@ -21,6 +21,10 @@ struct SettingsView: View {
     @State private var dataResultMessage: String?
     @State private var showingDataResult = false
     @State private var biometricMessage: String?
+    @State private var showingEmergencyExport = false
+    @State private var emergencyPassword = ""
+    @State private var emergencyConfirm = ""
+    @State private var emergencyMessage: String?
 
     var body: some View {
         @Bindable var appState = appState
@@ -87,6 +91,7 @@ struct SettingsView: View {
             vaultSection
             recycleBinSection
             dataSection
+            emergencySection
             auditSection
         }
         .padding(20)
@@ -295,6 +300,53 @@ struct SettingsView: View {
         }
     }
 
+    // MARK: - Emergency Access
+
+    @ViewBuilder
+    private var emergencySection: some View {
+        settingsSection("Emergency Access") {
+            settingsRow(icon: "exclamationmark.shield", iconColor: .citadelDanger) {
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack {
+                        Text("Export Emergency File").font(.system(size: 13))
+                        Spacer()
+                        Button("Export\u{2026}") { showingEmergencyExport = true }.font(.system(size: 12))
+                    }
+                    Text("Creates a .ctdl-emergency file protected by a separate emergency password. To restore, you need both this file and your vault master password.")
+                        .font(.system(size: 11))
+                        .foregroundStyle(Color.citadelSecondary)
+                    if showingEmergencyExport {
+                        VStack(alignment: .leading, spacing: 6) {
+                            SecureField("Emergency password", text: $emergencyPassword)
+                                .textFieldStyle(.roundedBorder)
+                                .font(.system(size: 13))
+                            SecureField("Confirm emergency password", text: $emergencyConfirm)
+                                .textFieldStyle(.roundedBorder)
+                                .font(.system(size: 13))
+                            HStack(spacing: 8) {
+                                Button("Cancel") {
+                                    showingEmergencyExport = false
+                                    emergencyPassword = ""
+                                    emergencyConfirm = ""
+                                    emergencyMessage = nil
+                                }
+                                .font(.system(size: 12))
+                                Button("Create Emergency File") { exportEmergency() }
+                                    .font(.system(size: 12, weight: .semibold))
+                                    .disabled(emergencyPassword.isEmpty || emergencyPassword != emergencyConfirm)
+                            }
+                        }
+                        .padding(.top, 4)
+                    }
+                    if let msg = emergencyMessage {
+                        Text(msg).font(.system(size: 11))
+                            .foregroundStyle(msg.contains("failed") ? Color.citadelDanger : Color.citadelSuccess)
+                    }
+                }
+            }
+        }
+    }
+
     // MARK: - Reusable Layout
 
     @ViewBuilder
@@ -397,6 +449,28 @@ struct SettingsView: View {
             dataResultMessage = "Import failed."
         }
         showingDataResult = true
+    }
+
+    private func exportEmergency() {
+        let panel = NSSavePanel()
+        panel.title = "Save Emergency Access File"
+        panel.nameFieldStringValue = "citadel-emergency.ctdl-emergency"
+        panel.allowedContentTypes = [.init(filenameExtension: "ctdl-emergency") ?? .data]
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        do {
+            try EmergencyAccess.export(
+                vaultPath: appState.vaultPath,
+                emergencyPassword: emergencyPassword,
+                destination: url
+            )
+            emergencyMessage = "Emergency file created."
+            appState.auditLogger.log(.exportCSV, detail: "Emergency access file exported")
+            showingEmergencyExport = false
+            emergencyPassword = ""
+            emergencyConfirm = ""
+        } catch {
+            emergencyMessage = "Export failed: \(error.localizedDescription)"
+        }
     }
 
     private func enrollBiometric() {

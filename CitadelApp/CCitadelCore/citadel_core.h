@@ -50,6 +50,10 @@ typedef struct CEntryListItem {
     char *group;
     char *entry_type;
     /**
+     * Comma-separated tags. Null or empty if no tags.
+     */
+    char *tags;
+    /**
      * Unix timestamp of expiry. 0 means no expiry set.
      */
     int64_t expiry_time;
@@ -58,6 +62,10 @@ typedef struct CEntryListItem {
      */
     int64_t last_modified;
     bool is_favorite;
+    /**
+     * Number of file attachments on this entry.
+     */
+    uint32_t attachment_count;
 } CEntryListItem;
 
 /**
@@ -104,6 +112,49 @@ typedef struct CEntryData {
     int64_t last_modified;
     bool is_favorite;
 } CEntryData;
+
+/**
+ * A single password history item.
+ */
+typedef struct CHistoryItem {
+    char *password;
+    /**
+     * Unix timestamp of when this password was set.
+     */
+    int64_t timestamp;
+} CHistoryItem;
+
+/**
+ * List of password history items, allocated by Rust, freed by `history_list_free`.
+ */
+typedef struct CHistoryList {
+    struct CHistoryItem *items;
+    uint32_t count;
+} CHistoryList;
+
+/**
+ * A single attachment info item (name + size).
+ */
+typedef struct CAttachmentInfo {
+    char *name;
+    uint64_t size;
+} CAttachmentInfo;
+
+/**
+ * List of attachment info items, allocated by Rust, freed by `attachment_list_free`.
+ */
+typedef struct CAttachmentList {
+    struct CAttachmentInfo *items;
+    uint32_t count;
+} CAttachmentList;
+
+/**
+ * Raw attachment data, allocated by Rust, freed by `attachment_data_free`.
+ */
+typedef struct CAttachmentData {
+    uint8_t *data;
+    uint64_t len;
+} CAttachmentData;
 
 /**
  * Bitmask flags for password character sets.
@@ -206,6 +257,60 @@ void group_list_free(char **groups, uint32_t count);
  * entries removed via `count_out` (set to 0 if no Recycle Bin exists).
  */
 enum VaultResult vault_empty_recyclebin(void *handle, uint32_t *count_out);
+
+/**
+ * Get the password history for an entry. Returns a list of (password, timestamp) pairs.
+ * Free with `history_list_free`.
+ */
+enum VaultResult vault_get_entry_history(void *handle,
+                                         const char *uuid_str,
+                                         struct CHistoryList **list_out);
+
+/**
+ * Free a history list returned by `vault_get_entry_history`.
+ */
+void history_list_free(struct CHistoryList *list);
+
+/**
+ * List attachments on an entry. Returns a list of (name, size) pairs.
+ * Free with `attachment_list_free`.
+ */
+enum VaultResult vault_list_attachments(void *handle,
+                                        const char *uuid_str,
+                                        struct CAttachmentList **list_out);
+
+/**
+ * Get an attachment's raw data by name.
+ * Free with `attachment_data_free`.
+ */
+enum VaultResult vault_get_attachment(void *handle,
+                                      const char *uuid_str,
+                                      const char *name,
+                                      struct CAttachmentData **data_out);
+
+/**
+ * Add an attachment to an entry.
+ */
+enum VaultResult vault_add_attachment(void *handle,
+                                      const char *uuid_str,
+                                      const char *name,
+                                      const uint8_t *data,
+                                      uint64_t data_len);
+
+/**
+ * Remove an attachment from an entry by name.
+ */
+enum VaultResult vault_remove_attachment(void *handle, const char *uuid_str, const char *name);
+
+/**
+ * Free an attachment list returned by `vault_list_attachments`.
+ */
+void attachment_list_free(struct CAttachmentList *list);
+
+/**
+ * Free attachment data returned by `vault_get_attachment`.
+ */
+void attachment_data_free(struct CAttachmentData *data);
 
 enum VaultResult vault_set_favorite(void *handle, const char *uuid_str, bool favorite);
 

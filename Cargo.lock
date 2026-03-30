@@ -250,6 +250,7 @@ dependencies = [
  "libc",
  "rand",
  "rust-argon2",
+ "secrecy",
  "tempfile",
  "uuid",
  "zeroize",
