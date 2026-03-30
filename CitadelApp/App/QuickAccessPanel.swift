@@ -16,10 +16,12 @@ final class QuickAccessPanel {
     }
 
     func registerGlobalShortcut() {
+        print("QUICK ACCESS: hotkey registered")
         // Monitor Cmd+Shift+Space globally
         monitor = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { [weak self] event in
             guard event.modifierFlags.contains([.command, .shift]),
                   event.keyCode == 49 /* Space */ else { return }
+            print("QUICK ACCESS: triggered (global)")
             Task { @MainActor in
                 self?.toggle()
             }
@@ -29,6 +31,7 @@ final class QuickAccessPanel {
         NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
             guard event.modifierFlags.contains([.command, .shift]),
                   event.keyCode == 49 else { return event }
+            print("QUICK ACCESS: triggered (local)")
             Task { @MainActor in
                 self?.toggle()
             }

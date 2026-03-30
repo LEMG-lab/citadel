@@ -354,6 +354,7 @@ final class AppState {
 
     /// Compute alert indicators for all entries (async, called after unlock).
     func computeEntryAlerts() {
+        print("DEBUG: [alert-dots] computeEntryAlerts called, entries=\(entries.count)")
         let currentEntries = entries
         let eng = engine
         Task {
@@ -409,6 +410,7 @@ final class AppState {
                 }
             }
 
+            print("DEBUG: [alert-dots] computed \(alerts.count) entries, weak=\(alerts.values.filter(\.weak).count) old=\(alerts.values.filter(\.old).count) missingTOTP=\(alerts.values.filter(\.missingTOTP).count)")
             self.entryAlerts = alerts
         }
     }

@@ -167,6 +167,7 @@ struct EntryListView: View {
 
             // Alert indicator dots
             let alerts = appState.entryAlerts[entry.id]
+            let _ = { if alerts != nil { print("DEBUG: [alert-dots] entry=\(entry.title) breached=\(alerts?.breached ?? false) weak=\(alerts?.weak ?? false) old=\(alerts?.old ?? false) missingTOTP=\(alerts?.missingTOTP ?? false)") } }()
             HStack(spacing: 3) {
                 if alerts?.breached == true {
                     Circle().fill(Color.citadelDanger).frame(width: 7, height: 7).help("Breached password")
