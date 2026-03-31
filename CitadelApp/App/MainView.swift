@@ -48,6 +48,9 @@ struct MainView: View {
     @State private var showingImportResult = false
     @State private var showingExpiredAlert = false
     @State private var showingCSVExportWarning = false
+    @State private var showingReAuthForCSV = false
+    @State private var reAuthPassword = ""
+    @State private var reAuthError: String?
     @State private var showingRestoreOverwriteWarning = false
     @State private var pendingRestoreURL: URL?
     @State private var pendingRestorePassword: String?
@@ -228,10 +231,59 @@ struct MainView: View {
             Text(appState.expiredEntriesMessage ?? "")
         }
         .confirmationDialog("Export Passwords", isPresented: $showingCSVExportWarning, titleVisibility: .visible) {
-            Button("Export Anyway", role: .destructive) { exportCSV() }
+            Button("Export Anyway", role: .destructive) {
+                reAuthPassword = ""
+                reAuthError = nil
+                showingReAuthForCSV = true
+            }
             Button("Cancel", role: .cancel) {}
         } message: {
             Text("WARNING: This will export ALL your passwords in plaintext. The file will NOT be encrypted. Do not save to cloud-synced folders.")
+        }
+        .sheet(isPresented: $showingReAuthForCSV) {
+            VStack(spacing: 16) {
+                Text("Re-enter Master Password")
+                    .font(.headline)
+                Text("Confirm your identity before exporting passwords.")
+                    .font(.system(size: 12))
+                    .foregroundStyle(.secondary)
+                SecureField("Master Password", text: $reAuthPassword)
+                    .textFieldStyle(.roundedBorder)
+                    .frame(width: 260)
+                    .onSubmit {
+                        if appState.verifyPassword(Data(reAuthPassword.utf8)) {
+                            reAuthPassword = ""
+                            reAuthError = nil
+                            showingReAuthForCSV = false
+                            exportCSV()
+                        } else {
+                            reAuthError = "Wrong password."
+                        }
+                    }
+                if let err = reAuthError {
+                    Text(err).foregroundStyle(.red).font(.system(size: 12))
+                }
+                HStack {
+                    Button("Cancel") {
+                        reAuthPassword = ""
+                        showingReAuthForCSV = false
+                    }
+                    Button("Confirm") {
+                        if appState.verifyPassword(Data(reAuthPassword.utf8)) {
+                            reAuthPassword = ""
+                            reAuthError = nil
+                            showingReAuthForCSV = false
+                            exportCSV()
+                        } else {
+                            reAuthError = "Wrong password."
+                        }
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(.citadelAccent)
+                }
+            }
+            .padding(24)
+            .frame(width: 340)
         }
         .confirmationDialog("Replace Existing Vaults?", isPresented: $showingRestoreOverwriteWarning, titleVisibility: .visible) {
             Button("Replace", role: .destructive) {
@@ -501,8 +553,12 @@ struct MainView: View {
         guard alert.runModal() == .alertFirstButtonReturn else { return }
 
         do {
-            let manifest = try appState.verifyBackup(at: url, backupPassword: input.stringValue)
-            backupResultMessage = "Backup verified. Contains \(manifest.vaults.count) vault(s), created \(manifest.createdAt.formatted(date: .abbreviated, time: .shortened))."
+            let result = try appState.verifyBackup(at: url, backupPassword: input.stringValue)
+            var msg = "Backup verified. Contains \(result.manifest.vaults.count) vault(s), created \(result.manifest.createdAt.formatted(date: .abbreviated, time: .shortened))."
+            if result.isLegacyFormat {
+                msg += "\n\nWarning: This backup uses weak encryption (v1). Please re-export it using the current version for stronger protection."
+            }
+            backupResultMessage = msg
         } catch {
             backupResultMessage = "Verification failed: \(error.localizedDescription)"
         }
@@ -539,8 +595,12 @@ struct MainView: View {
 
     private func doRestore(from url: URL, password: String) {
         do {
-            let manifest = try appState.restoreFromBackup(at: url, backupPassword: password)
-            backupResultMessage = "Restored \(manifest.vaults.count) vault(s) successfully."
+            let result = try appState.restoreFromBackup(at: url, backupPassword: password)
+            var msg = "Restored \(result.manifest.vaults.count) vault(s) successfully."
+            if result.isLegacyFormat {
+                msg += "\n\nWarning: This backup used weak encryption (v1). Please re-export using the current version for stronger protection."
+            }
+            backupResultMessage = msg
         } catch {
             backupResultMessage = "Restore failed: \(error.localizedDescription)"
         }

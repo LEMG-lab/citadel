@@ -94,14 +94,20 @@ public enum VaultBackupBundle {
         try output.write(to: destination)
     }
 
+    /// Result of verify/restore including legacy format flag.
+    public struct RestoreResult {
+        public let manifest: Manifest
+        public let isLegacyFormat: Bool
+    }
+
     /// Verify a backup bundle: decrypt, parse manifest, validate checksums.
-    public static func verify(at url: URL, backupPassword: String) throws -> Manifest {
-        let manifest = try readManifest(at: url, backupPassword: backupPassword)
-        let files = try readFiles(at: url, backupPassword: backupPassword)
+    public static func verify(at url: URL, backupPassword: String) throws -> RestoreResult {
+        let parsed = try readManifest(at: url, backupPassword: backupPassword)
+        let filesResult = try readFiles(at: url, backupPassword: backupPassword)
 
         // Validate checksums
-        for (filename, expectedHash) in manifest.checksums {
-            guard let fileData = files[filename] else {
+        for (filename, expectedHash) in parsed.manifest.checksums {
+            guard let fileData = filesResult.files[filename] else {
                 throw BackupBundleError.missingFile(filename)
             }
             let actualHash = sha256Hex(fileData)
@@ -110,35 +116,62 @@ public enum VaultBackupBundle {
             }
         }
 
-        return manifest
+        return RestoreResult(manifest: parsed.manifest, isLegacyFormat: parsed.isLegacyFormat)
     }
 
     /// Restore vaults from a backup bundle to a directory.
-    public static func restore(from url: URL, backupPassword: String, toDirectory: String) throws -> Manifest {
-        let manifest = try verify(at: url, backupPassword: backupPassword)
-        let files = try readFiles(at: url, backupPassword: backupPassword)
+    public static func restore(from url: URL, backupPassword: String, toDirectory: String) throws -> RestoreResult {
+        let verifyResult = try verify(at: url, backupPassword: backupPassword)
+        let filesResult = try readFiles(at: url, backupPassword: backupPassword)
         let fm = FileManager.default
 
-        try fm.createDirectory(atPath: toDirectory, withIntermediateDirectories: true)
+        // Atomic restore: write to staging directory first, then move into place
+        let stagingDir = (toDirectory as NSString).appendingPathComponent(".restore-staging-\(UUID().uuidString)")
+        try fm.createDirectory(atPath: stagingDir, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
 
-        for vault in manifest.vaults {
-            if let data = files[vault.filename] {
-                let destPath = (toDirectory as NSString).appendingPathComponent(vault.filename)
-                try data.write(to: URL(fileURLWithPath: destPath))
+        do {
+            for vault in verifyResult.manifest.vaults {
+                if let data = filesResult.files[vault.filename] {
+                    let stagePath = (stagingDir as NSString).appendingPathComponent(vault.filename)
+                    try data.write(to: URL(fileURLWithPath: stagePath), options: [.atomic])
+                }
+                if let kfName = vault.keyfileName, let kfData = filesResult.files[kfName] {
+                    let stagePath = (stagingDir as NSString).appendingPathComponent(kfName)
+                    try kfData.write(to: URL(fileURLWithPath: stagePath), options: [.atomic])
+                }
             }
-            if let kfName = vault.keyfileName, let kfData = files[kfName] {
-                let destPath = (toDirectory as NSString).appendingPathComponent(kfName)
-                try kfData.write(to: URL(fileURLWithPath: destPath))
+
+            // All files staged successfully — move into final location
+            try fm.createDirectory(atPath: toDirectory, withIntermediateDirectories: true)
+            let staged = try fm.contentsOfDirectory(atPath: stagingDir)
+            for file in staged {
+                let src = (stagingDir as NSString).appendingPathComponent(file)
+                let dst = (toDirectory as NSString).appendingPathComponent(file)
+                if fm.fileExists(atPath: dst) {
+                    try fm.removeItem(atPath: dst)
+                }
+                try fm.moveItem(atPath: src, toPath: dst)
             }
+            try? fm.removeItem(atPath: stagingDir)
+        } catch {
+            // Cleanup staging on failure — original files untouched
+            try? fm.removeItem(atPath: stagingDir)
+            throw error
         }
 
-        return manifest
+        return verifyResult
     }
 
     // MARK: - Internal
 
+    /// Result of decryption including legacy format warning.
+    public struct DecryptResult {
+        public let data: Data
+        public let isLegacyFormat: Bool
+    }
+
     /// Decrypt backup file. Supports v2 (Argon2id) and v1 (legacy SHA-256) formats.
-    private static func decrypt(at url: URL, backupPassword: String) throws -> Data {
+    private static func decrypt(at url: URL, backupPassword: String) throws -> DecryptResult {
         let raw = try Data(contentsOf: url)
         guard raw.count > 4, raw.prefix(4) == magic else {
             throw BackupBundleError.invalidFormat
@@ -153,7 +186,7 @@ public enum VaultBackupBundle {
             if let key = Argon2Bridge.deriveKey(from: backupPassword, salt: salt) {
                 do {
                     let sealedBox = try ChaChaPoly.SealedBox(combined: encrypted)
-                    return try ChaChaPoly.open(sealedBox, using: key)
+                    return DecryptResult(data: try ChaChaPoly.open(sealedBox, using: key), isLegacyFormat: false)
                 } catch {
                     // Fall through to try old params
                 }
@@ -164,18 +197,19 @@ public enum VaultBackupBundle {
                 throw BackupBundleError.keyDerivationFailed
             }
             let sealedBox = try ChaChaPoly.SealedBox(combined: encrypted)
-            return try ChaChaPoly.open(sealedBox, using: lowKey)
+            return DecryptResult(data: try ChaChaPoly.open(sealedBox, using: lowKey), isLegacyFormat: false)
         }
 
         // v1 legacy: magic(4) + sealed (SHA-256 key derivation)
         let encrypted = raw.dropFirst(4)
         let key = deriveLegacyKey(from: backupPassword)
         let sealedBox = try ChaChaPoly.SealedBox(combined: encrypted)
-        return try ChaChaPoly.open(sealedBox, using: key)
+        return DecryptResult(data: try ChaChaPoly.open(sealedBox, using: key), isLegacyFormat: true)
     }
 
-    private static func readFiles(at url: URL, backupPassword: String) throws -> [String: Data] {
-        let container = try decrypt(at: url, backupPassword: backupPassword)
+    private static func readFiles(at url: URL, backupPassword: String) throws -> (files: [String: Data], isLegacyFormat: Bool) {
+        let result = try decrypt(at: url, backupPassword: backupPassword)
+        let container = result.data
         var files: [String: Data] = [:]
         var offset = 0
 
@@ -200,15 +234,15 @@ public enum VaultBackupBundle {
             files[name] = data
         }
 
-        return files
+        return (files: files, isLegacyFormat: result.isLegacyFormat)
     }
 
-    private static func readManifest(at url: URL, backupPassword: String) throws -> Manifest {
-        let files = try readFiles(at: url, backupPassword: backupPassword)
-        guard let manifestData = files["manifest.json"] else {
+    private static func readManifest(at url: URL, backupPassword: String) throws -> (manifest: Manifest, isLegacyFormat: Bool) {
+        let result = try readFiles(at: url, backupPassword: backupPassword)
+        guard let manifestData = result.files["manifest.json"] else {
             throw BackupBundleError.missingManifest
         }
-        return try JSONDecoder().decode(Manifest.self, from: manifestData)
+        return (manifest: try JSONDecoder().decode(Manifest.self, from: manifestData), isLegacyFormat: result.isLegacyFormat)
     }
 
     /// Legacy SHA-256 key derivation for reading old backup files.

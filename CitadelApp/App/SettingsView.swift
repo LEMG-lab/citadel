@@ -27,6 +27,10 @@ struct SettingsView: View {
     @State private var emergencyMessage: String?
     @State private var showingAbout = false
     @State private var showingCSVExportWarning = false
+    @State private var showingReAuthForCSV = false
+    @State private var showingReAuthForEmergency = false
+    @State private var reAuthPassword = ""
+    @State private var reAuthError: String?
 
     var body: some View {
         @Bindable var appState = appState
@@ -77,10 +81,24 @@ struct SettingsView: View {
         }
         .alert("Data Operation", isPresented: $showingDataResult) { Button("OK") {} } message: { Text(dataResultMessage ?? "") }
         .confirmationDialog("Export Passwords", isPresented: $showingCSVExportWarning, titleVisibility: .visible) {
-            Button("Export Anyway", role: .destructive) { exportCSV() }
+            Button("Export Anyway", role: .destructive) {
+                reAuthPassword = ""
+                reAuthError = nil
+                showingReAuthForCSV = true
+            }
             Button("Cancel", role: .cancel) {}
         } message: {
             Text("WARNING: This will export ALL your passwords in plaintext. The file will NOT be encrypted. Do not save to cloud-synced folders.")
+        }
+        .sheet(isPresented: $showingReAuthForCSV) {
+            reAuthSheet(title: "Re-enter Master Password", subtitle: "Confirm your identity before exporting passwords.") {
+                exportCSV()
+            }
+        }
+        .sheet(isPresented: $showingReAuthForEmergency) {
+            reAuthSheet(title: "Re-enter Master Password", subtitle: "Confirm your identity before creating emergency file.") {
+                exportEmergency()
+            }
         }
         .confirmationDialog("Empty Recycle Bin", isPresented: $showingEmptyRecycleBin, titleVisibility: .visible) {
             Button("Delete Permanently", role: .destructive) { emptyRecycleBin() }
@@ -341,7 +359,11 @@ struct SettingsView: View {
                                     emergencyMessage = nil
                                 }
                                 .font(.system(size: 12))
-                                Button("Create Emergency File") { exportEmergency() }
+                                Button("Create Emergency File") {
+                                    reAuthPassword = ""
+                                    reAuthError = nil
+                                    showingReAuthForEmergency = true
+                                }
                                     .font(.system(size: 12, weight: .semibold))
                                     .disabled(emergencyPassword.isEmpty || emergencyPassword != emergencyConfirm)
                             }
@@ -543,5 +565,50 @@ struct SettingsView: View {
         appState.biometricManager.unenroll()
         appState.refreshBiometricState()
         biometricMessage = nil
+    }
+
+    @ViewBuilder
+    private func reAuthSheet(title: String, subtitle: String, onSuccess: @escaping () -> Void) -> some View {
+        VStack(spacing: 16) {
+            Text(title).font(.headline)
+            Text(subtitle)
+                .font(.system(size: 12))
+                .foregroundStyle(.secondary)
+            SecureField("Master Password", text: $reAuthPassword)
+                .textFieldStyle(.roundedBorder)
+                .frame(width: 260)
+                .onSubmit {
+                    attemptReAuth(onSuccess: onSuccess)
+                }
+            if let err = reAuthError {
+                Text(err).foregroundStyle(.red).font(.system(size: 12))
+            }
+            HStack {
+                Button("Cancel") {
+                    reAuthPassword = ""
+                    showingReAuthForCSV = false
+                    showingReAuthForEmergency = false
+                }
+                Button("Confirm") {
+                    attemptReAuth(onSuccess: onSuccess)
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(.citadelAccent)
+            }
+        }
+        .padding(24)
+        .frame(width: 340)
+    }
+
+    private func attemptReAuth(onSuccess: () -> Void) {
+        if appState.verifyPassword(Data(reAuthPassword.utf8)) {
+            reAuthPassword = ""
+            reAuthError = nil
+            showingReAuthForCSV = false
+            showingReAuthForEmergency = false
+            onSuccess()
+        } else {
+            reAuthError = "Wrong password."
+        }
     }
 }

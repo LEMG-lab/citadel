@@ -38,7 +38,10 @@ public final class AuditLogger {
     /// Log an event with optional detail.
     public func log(_ event: Event, detail: String = "") {
         let timestamp = formatter.string(from: Date())
-        let sanitized = detail.replacingOccurrences(of: "\n", with: " ")
+        let sanitized = detail
+            .replacingOccurrences(of: "\n", with: " ")
+            .replacingOccurrences(of: "\r", with: " ")
+            .filter { !$0.isASCII || $0.asciiValue! >= 32 }
         let line = "\(timestamp) \(event.rawValue) \(sanitized)\n"
 
         if let data = line.data(using: .utf8) {

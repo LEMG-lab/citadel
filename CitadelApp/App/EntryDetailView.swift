@@ -730,13 +730,22 @@ struct EntryDetailView: View {
                 try FileManager.default.removeItem(at: tmpDir)
             }
             try FileManager.default.createDirectory(at: tmpDir, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
-            let fileURL = tmpDir.appendingPathComponent(name)
+            // Sanitize attachment name to prevent path traversal
+            let sanitized = name
+                .replacingOccurrences(of: "/", with: "_")
+                .replacingOccurrences(of: "..", with: "_")
+                .replacingOccurrences(of: "\0", with: "")
+            let fileURL = tmpDir.appendingPathComponent(sanitized)
+            guard fileURL.standardizedFileURL.path.hasPrefix(tmpDir.standardizedFileURL.path + "/") else {
+                errorMessage = "Invalid attachment name"
+                return
+            }
             try data.write(to: fileURL, options: [.atomic])
             try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: fileURL.path)
             NSWorkspace.shared.open(fileURL)
-            // Schedule cleanup after 60 seconds
+            // Schedule cleanup after 10 seconds
             let dirToClean = tmpDir
-            DispatchQueue.main.asyncAfter(deadline: .now() + 60) {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 10) {
                 try? FileManager.default.removeItem(at: dirToClean)
             }
         } catch {

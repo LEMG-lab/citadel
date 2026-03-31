@@ -397,16 +397,19 @@ struct LockScreenView: View {
         guard let filePath = emergencyFilePath else { return }
         emergencyMessage = nil
         do {
-            let tmpKdbxPath = try EmergencyAccess.openToTempFile(
+            let result = try EmergencyAccess.openToTempFile(
                 at: URL(fileURLWithPath: filePath),
                 emergencyPassword: emergencyPassword
             )
+            if result.isLegacyFormat {
+                emergencyMessage = "Warning: This file uses weak encryption (v1). Please re-export it using the current version for stronger protection."
+            }
             let pw = Data(emergencyVaultPassword.utf8)
             emergencyPassword = ""
             emergencyVaultPassword = ""
             Task {
                 do {
-                    try await appState.unlockAsync(password: pw, vaultPathOverride: tmpKdbxPath)
+                    try await appState.unlockAsync(password: pw, vaultPathOverride: result.path)
                     showingEmergencyOpen = false
                 } catch {
                     emergencyMessage = "Could not open vault — check both passwords"

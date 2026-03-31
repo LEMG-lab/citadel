@@ -133,6 +133,14 @@ final class AppState {
         // Migrate: remove old file-based biometric data (replaced by Keychain)
         BiometricManager.cleanupOldBioFiles(inDirectory: dir.path)
 
+        // Clean up stale temp dirs from previous crashes
+        let tmpBase = FileManager.default.temporaryDirectory
+        if let tmpContents = try? FileManager.default.contentsOfDirectory(atPath: tmpBase.path) {
+            for item in tmpContents where item.hasPrefix("smaug-attachments") || item.hasPrefix("smaug-emergency") {
+                try? FileManager.default.removeItem(at: tmpBase.appendingPathComponent(item))
+            }
+        }
+
         autoLockManager = AutoLockManager { [weak self] in
             self?.lockVault()
         }
@@ -263,8 +271,19 @@ final class AppState {
     // MARK: - Vault lifecycle
 
     func unlock(password: Data, keyfilePath: String? = nil) throws {
+        // Brute-force throttling
+        let delay = unlockThrottleDelay()
+        if delay > 0 {
+            Thread.sleep(forTimeInterval: delay)
+        }
         try acquireVaultLock()
-        try engine.open(path: vaultPath, password: password, keyfilePath: keyfilePath)
+        do {
+            try engine.open(path: vaultPath, password: password, keyfilePath: keyfilePath)
+        } catch {
+            recordFailedUnlock()
+            throw error
+        }
+        resetFailedUnlocks()
         currentPassword = password
         currentKeyfilePath = keyfilePath
         entries = try engine.listEntries()
@@ -385,6 +404,40 @@ final class AppState {
         }
     }
 
+    // MARK: - Brute-force throttling
+
+    private var unlockFailuresPath: String {
+        (vaultDirectory as NSString).appendingPathComponent(".unlock-failures")
+    }
+
+    private func readFailureCount() -> Int {
+        guard let data = FileManager.default.contents(atPath: unlockFailuresPath),
+              let str = String(data: data, encoding: .utf8),
+              let count = Int(str.trimmingCharacters(in: .whitespacesAndNewlines)) else {
+            return 0
+        }
+        return count
+    }
+
+    private func recordFailedUnlock() {
+        let count = readFailureCount() + 1
+        try? "\(count)".write(toFile: unlockFailuresPath, atomically: true, encoding: .utf8)
+        auditLogger.log(.unlock, detail: "FAILED attempt \(count)")
+    }
+
+    private func resetFailedUnlocks() {
+        try? FileManager.default.removeItem(atPath: unlockFailuresPath)
+    }
+
+    private func unlockThrottleDelay() -> TimeInterval {
+        let count = readFailureCount()
+        if count >= 20 { return 300 }  // 5 minutes
+        if count >= 10 { return 30 }
+        if count >= 5 { return 5 }
+        if count >= 3 { return 1 }
+        return 0
+    }
+
     // MARK: - Persistence
 
     func save() throws {
@@ -495,6 +548,14 @@ final class AppState {
         return count
     }
 
+    // MARK: - Re-authentication
+
+    /// Verify the given password matches the current master password.
+    func verifyPassword(_ password: Data) -> Bool {
+        guard let current = currentPassword else { return false }
+        return password == current
+    }
+
     // MARK: - Password change
 
     func changePassword(currentPassword: Data, newPassword: Data, newKeyfilePath: String? = nil) throws {
@@ -585,19 +646,19 @@ final class AppState {
     }
 
     /// Verify a backup bundle.
-    func verifyBackup(at url: URL, backupPassword: String) throws -> VaultBackupBundle.Manifest {
+    func verifyBackup(at url: URL, backupPassword: String) throws -> VaultBackupBundle.RestoreResult {
         try VaultBackupBundle.verify(at: url, backupPassword: backupPassword)
     }
 
     /// Restore from a backup bundle.
-    func restoreFromBackup(at url: URL, backupPassword: String) throws -> VaultBackupBundle.Manifest {
-        let manifest = try VaultBackupBundle.restore(from: url, backupPassword: backupPassword, toDirectory: vaultDirectory)
+    func restoreFromBackup(at url: URL, backupPassword: String) throws -> VaultBackupBundle.RestoreResult {
+        let result = try VaultBackupBundle.restore(from: url, backupPassword: backupPassword, toDirectory: vaultDirectory)
         // Register restored vaults
-        for vault in manifest.vaults {
+        for vault in result.manifest.vaults {
             let path = (vaultDirectory as NSString).appendingPathComponent(vault.filename)
             vaultRegistry.register(name: vault.name, path: path)
         }
-        return manifest
+        return result
     }
 
     // MARK: - File locking

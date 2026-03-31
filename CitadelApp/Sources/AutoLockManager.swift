@@ -85,7 +85,8 @@ public final class AutoLockManager {
         )
 
         // Local event monitor for user activity inside this app
-        let mask: NSEvent.EventTypeMask = [.leftMouseDown, .rightMouseDown, .keyDown, .scrollWheel, .mouseMoved]
+        // Note: .mouseMoved deliberately excluded — optical mouse jitter prevents auto-lock
+        let mask: NSEvent.EventTypeMask = [.leftMouseDown, .rightMouseDown, .keyDown, .scrollWheel]
         localEventMonitor = NSEvent.addLocalMonitorForEvents(matching: mask) { [weak self] event in
             Task { @MainActor in self?.recordActivity() }
             return event

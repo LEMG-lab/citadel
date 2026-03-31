@@ -32,9 +32,15 @@ public enum EmergencyAccess {
         try output.write(to: destination)
     }
 
+    /// Result of decryption including legacy format warning.
+    public struct DecryptResult {
+        public let data: Data
+        public let isLegacyFormat: Bool
+    }
+
     /// Decrypt an emergency file and return the inner KDBX data.
     /// Supports both v1 (legacy SHA-256) and v2 (Argon2id) formats.
-    public static func decrypt(at url: URL, emergencyPassword: String) throws -> Data {
+    public static func decrypt(at url: URL, emergencyPassword: String) throws -> DecryptResult {
         let raw = try Data(contentsOf: url)
         guard raw.count > 5,
               raw.prefix(4) == magic else {
@@ -53,7 +59,7 @@ public enum EmergencyAccess {
             if let key = Argon2Bridge.deriveKey(from: emergencyPassword, salt: salt) {
                 do {
                     let sealedBox = try ChaChaPoly.SealedBox(combined: encrypted)
-                    return try ChaChaPoly.open(sealedBox, using: key)
+                    return DecryptResult(data: try ChaChaPoly.open(sealedBox, using: key), isLegacyFormat: false)
                 } catch {
                     // Fall through to try old params
                 }
@@ -65,7 +71,7 @@ public enum EmergencyAccess {
             }
             do {
                 let sealedBox = try ChaChaPoly.SealedBox(combined: encrypted)
-                return try ChaChaPoly.open(sealedBox, using: lowKey)
+                return DecryptResult(data: try ChaChaPoly.open(sealedBox, using: lowKey), isLegacyFormat: false)
             } catch {
                 throw EmergencyAccessError.wrongPassword
             }
@@ -75,7 +81,7 @@ public enum EmergencyAccess {
             let key = deriveLegacyKey(from: emergencyPassword)
             do {
                 let sealedBox = try ChaChaPoly.SealedBox(combined: encrypted)
-                return try ChaChaPoly.open(sealedBox, using: key)
+                return DecryptResult(data: try ChaChaPoly.open(sealedBox, using: key), isLegacyFormat: true)
             } catch {
                 throw EmergencyAccessError.wrongPassword
             }
@@ -85,9 +91,10 @@ public enum EmergencyAccess {
     }
 
     /// Open an emergency file: decrypt outer layer, write temp KDBX, open with vault password.
-    /// Returns the path to the temporary KDBX file.
-    public static func openToTempFile(at url: URL, emergencyPassword: String) throws -> String {
-        let kdbxData = try decrypt(at: url, emergencyPassword: emergencyPassword)
+    /// Returns the path to the temporary KDBX file and whether it used legacy format.
+    public static func openToTempFile(at url: URL, emergencyPassword: String) throws -> (path: String, isLegacyFormat: Bool) {
+        let result = try decrypt(at: url, emergencyPassword: emergencyPassword)
+        let kdbxData = result.data
         let tmpDir = FileManager.default.temporaryDirectory
             .appendingPathComponent("smaug-emergency-\(UUID().uuidString)", isDirectory: true)
         // Guard against symlink attacks
@@ -98,7 +105,7 @@ public enum EmergencyAccess {
         let tmpPath = tmpDir.appendingPathComponent("emergency-vault.kdbx")
         try kdbxData.write(to: tmpPath, options: [.atomic])
         try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: tmpPath.path)
-        return tmpPath.path
+        return (path: tmpPath.path, isLegacyFormat: result.isLegacyFormat)
     }
 
     // MARK: - Legacy key derivation (v1 backward compat)
