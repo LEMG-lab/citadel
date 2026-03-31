@@ -45,7 +45,11 @@ struct LockScreenView: View {
 
                 // App name
                 Text("Smaug")
-                    .font(.system(size: 28, weight: .semibold, design: .rounded))
+                    .font(.system(size: 28, weight: .bold))
+                    .foregroundColor(.primary)
+                Text("by Luis Maumejean G.")
+                    .font(.system(size: 13))
+                    .foregroundColor(.secondary)
 
                 // Vault name
                 if let vault = appState.knownVaults.first(where: { $0.path == appState.vaultPath }) {
