@@ -27,6 +27,7 @@ struct EntryDetailView: View {
     @State private var seedWordDismissTask: Task<Void, Never>?
     @State private var revealedFieldKeys: Set<String> = []
     @State private var revealedSeedWords: Set<Int> = []
+    @State private var revealedRecoveryCodes: Set<Int> = []
 
     private var isSecureNote: Bool {
         entry?.entryType == "secure_note"
@@ -35,6 +36,10 @@ struct EntryDetailView: View {
     private var isCryptoSeedType: Bool {
         let t = entry?.entryType ?? ""
         return t == "seed_phrase" || t == "multi_chain_wallet"
+    }
+
+    private var isRecoveryCodes: Bool {
+        entry?.entryType == "recovery_codes"
     }
 
     var body: some View {
@@ -92,6 +97,10 @@ struct EntryDetailView: View {
 
                     if isCryptoSeedType {
                         seedPhraseSection(entry)
+                    }
+
+                    if isRecoveryCodes {
+                        recoveryCodesSection(entry)
                     }
 
                     if !entry.customFields.isEmpty {
@@ -165,9 +174,23 @@ struct EntryDetailView: View {
             )
 
             VStack(alignment: .leading, spacing: 3) {
-                Text(entry.title.isEmpty ? "(Untitled)" : entry.title)
-                    .font(.system(size: 20, weight: .bold))
-                    .lineLimit(2)
+                HStack(spacing: 6) {
+                    Text(entry.title.isEmpty ? "(Untitled)" : entry.title)
+                        .font(.system(size: 20, weight: .bold))
+                        .lineLimit(2)
+
+                    if !entry.title.isEmpty {
+                        Button {
+                            appState.clipboard.copySecure(entry.title)
+                        } label: {
+                            Image(systemName: "doc.on.doc")
+                                .font(.system(size: 11))
+                                .foregroundStyle(Color.citadelSecondary.opacity(0.5))
+                        }
+                        .buttonStyle(.plain)
+                        .help("Copy title")
+                    }
+                }
 
                 if !isSecureNote && !entry.username.isEmpty {
                     Text(entry.username)
@@ -468,7 +491,7 @@ struct EntryDetailView: View {
                             }
                             .buttonStyle(.plain)
                             Button {
-                                appState.clipboard.copySecure(item.word)
+                                appState.clipboard.copyPassword(Data(item.word.utf8))
                             } label: {
                                 Image(systemName: "doc.on.doc")
                                     .font(.system(size: 9))
@@ -553,6 +576,15 @@ struct EntryDetailView: View {
                             .font(.system(size: 13, design: .monospaced))
                             .foregroundStyle(.primary)
                         Spacer()
+                        Button {
+                            appState.clipboard.copyPassword(Data(item.word.utf8))
+                        } label: {
+                            Image(systemName: "doc.on.doc")
+                                .font(.system(size: 10))
+                                .foregroundStyle(Color.citadelSecondary)
+                        }
+                        .buttonStyle(.plain)
+                        .help("Copy word \(item.num)")
                     }
                     .padding(8)
                     .background(Color.cardBackground, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
@@ -560,26 +592,135 @@ struct EntryDetailView: View {
                 }
             }
 
-            Button("Dismiss") {
-                showingSeedWords = false
-                seedWordDismissTask?.cancel()
+            HStack(spacing: 12) {
+                Button {
+                    let phrase = words.map(\.word).joined(separator: " ")
+                    appState.clipboard.copyPassword(Data(phrase.utf8))
+                } label: {
+                    HStack(spacing: 5) {
+                        Image(systemName: "doc.on.doc.fill")
+                            .font(.system(size: 12))
+                        Text("Copy Full Seed Phrase")
+                            .font(.system(size: 12, weight: .medium))
+                    }
+                    .foregroundStyle(Color.citadelAccent)
+                }
+                .buttonStyle(.plain)
+
+                Spacer()
+
+                Button("Dismiss") {
+                    showingSeedWords = false
+                    seedWordDismissTask?.cancel()
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(.citadelAccent)
+                .keyboardShortcut(.defaultAction)
             }
-            .buttonStyle(.borderedProminent)
-            .tint(.citadelAccent)
-            .keyboardShortcut(.defaultAction)
         }
         .padding(24)
         .frame(width: 500)
         .interactiveDismissDisabled(false)
     }
 
+    // MARK: - Recovery Codes Section
+
+    private func recoveryCodes(from entry: VaultEntryDetail) -> [String] {
+        guard let field = entry.customFields.first(where: { $0.key == "Recovery Codes" }) else { return [] }
+        return field.value
+            .components(separatedBy: .newlines)
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty }
+    }
+
+    @ViewBuilder
+    private func recoveryCodesSection(_ entry: VaultEntryDetail) -> some View {
+        let codes = recoveryCodes(from: entry)
+        if !codes.isEmpty {
+            VStack(alignment: .leading, spacing: 8) {
+                SectionHeader(title: "Recovery Codes (\(codes.count))")
+                    .padding(.top, 4)
+
+                let columns = [GridItem(.flexible()), GridItem(.flexible()), GridItem(.flexible())]
+                LazyVGrid(columns: columns, spacing: 6) {
+                    ForEach(Array(codes.enumerated()), id: \.offset) { idx, code in
+                        HStack(spacing: 4) {
+                            Text("\(idx + 1)")
+                                .font(.system(size: 10, weight: .bold, design: .monospaced))
+                                .foregroundStyle(Color.citadelSecondary)
+                                .frame(width: 18, alignment: .trailing)
+                            if revealedRecoveryCodes.contains(idx) {
+                                Text(code)
+                                    .font(.system(size: 11, design: .monospaced))
+                                    .foregroundStyle(.primary)
+                            } else {
+                                Text(String(repeating: "\u{2022}", count: 6))
+                                    .font(.system(size: 11))
+                                    .foregroundStyle(.secondary)
+                            }
+                            Spacer()
+                            Button {
+                                if revealedRecoveryCodes.contains(idx) {
+                                    revealedRecoveryCodes.remove(idx)
+                                } else {
+                                    revealedRecoveryCodes.insert(idx)
+                                }
+                            } label: {
+                                Image(systemName: revealedRecoveryCodes.contains(idx) ? "eye.fill" : "eye")
+                                    .font(.system(size: 9))
+                                    .foregroundStyle(revealedRecoveryCodes.contains(idx) ? Color.citadelAccent : Color.citadelSecondary)
+                            }
+                            .buttonStyle(.plain)
+                            Button {
+                                appState.clipboard.copyPassword(Data(code.utf8))
+                            } label: {
+                                Image(systemName: "doc.on.doc")
+                                    .font(.system(size: 9))
+                                    .foregroundStyle(Color.citadelSecondary)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 5)
+                        .background(Color.cardBackground.opacity(0.6), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+                        .overlay(RoundedRectangle(cornerRadius: 6, style: .continuous).stroke(Color.subtleSeparator.opacity(0.3), lineWidth: 0.5))
+                    }
+                }
+
+                Button {
+                    let all = codes.joined(separator: "\n")
+                    appState.clipboard.copyPassword(Data(all.utf8))
+                } label: {
+                    HStack(spacing: 5) {
+                        Image(systemName: "doc.on.doc.fill")
+                            .font(.system(size: 12))
+                        Text("Copy All Codes")
+                            .font(.system(size: 12, weight: .medium))
+                    }
+                    .foregroundStyle(Color.citadelAccent)
+                }
+                .buttonStyle(.plain)
+                .padding(.top, 4)
+            }
+        }
+    }
+
     // MARK: - Custom Fields
+
+    private func visibleCustomFields(_ entry: VaultEntryDetail) -> [CustomField] {
+        var fields = entry.customFields
+        if isCryptoSeedType {
+            fields = fields.filter { !$0.key.hasPrefix(EntryTemplate.seedWordPrefix) }
+        }
+        if isRecoveryCodes {
+            fields = fields.filter { $0.key != "Recovery Codes" }
+        }
+        return fields
+    }
 
     @ViewBuilder
     private func customFieldsSection(_ entry: VaultEntryDetail) -> some View {
-        let fields = isCryptoSeedType
-            ? entry.customFields.filter { !$0.key.hasPrefix(EntryTemplate.seedWordPrefix) }
-            : entry.customFields
+        let fields = visibleCustomFields(entry)
 
         if !fields.isEmpty {
             VStack(alignment: .leading, spacing: 8) {
@@ -626,7 +767,11 @@ struct EntryDetailView: View {
                             }
 
                             copyButton {
-                                appState.clipboard.copySecure(field.value)
+                                if field.isProtected {
+                                    appState.clipboard.copyPassword(Data(field.value.utf8))
+                                } else {
+                                    appState.clipboard.copySecure(field.value)
+                                }
                             }
                         }
                     }
@@ -861,6 +1006,7 @@ struct EntryDetailView: View {
         showPasswordHistory = false
         revealedFieldKeys.removeAll()
         revealedSeedWords.removeAll()
+        revealedRecoveryCodes.removeAll()
         do {
             entry = try appState.engine.getEntry(uuid: entryID)
             passwordHistory = (try? appState.engine.getEntryHistory(uuid: entryID)) ?? []
