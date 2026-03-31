@@ -248,6 +248,11 @@ enum VaultResult vault_delete_entry(void *handle, const char *uuid_str);
 enum VaultResult vault_list_groups(void *handle, char ***groups_out, uint32_t *count_out);
 
 /**
+ * Create a group by slash-separated path. No-op if it already exists.
+ */
+enum VaultResult vault_create_group(void *handle, const char *path);
+
+/**
  * Free a group list returned by `vault_list_groups`.
  */
 void group_list_free(char **groups, uint32_t count);

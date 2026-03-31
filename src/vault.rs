@@ -230,6 +230,15 @@ impl VaultState {
         out
     }
 
+    /// Create a group by path (slash-separated). No-op if it already exists.
+    pub fn create_group(&mut self, path: &str) -> Result<(), VaultResult> {
+        if path.trim().is_empty() {
+            return Err(VaultResult::InternalError);
+        }
+        get_or_create_group(&mut self.db.root, path);
+        Ok(())
+    }
+
     /// Find an entry by UUID and return its full data.
     pub fn get_entry(&self, uuid: uuid::Uuid) -> Result<EntryDetail, VaultResult> {
         let entry = self

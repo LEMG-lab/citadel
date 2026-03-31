@@ -486,6 +486,17 @@ public final class VaultEngine: @unchecked Sendable {
         return groups
     }
 
+    /// Create a group by slash-separated path. No-op if it already exists.
+    public func createGroup(path: String) throws {
+        lock.lock()
+        defer { lock.unlock() }
+        let h = try _requireHandle()
+        let result = path.withCString { cPath in
+            vault_create_group(h, cPath)
+        }
+        try check(result)
+    }
+
     // MARK: - Attachments
 
     /// List attachments on an entry. Returns (name, sizeBytes) pairs.

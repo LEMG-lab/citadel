@@ -7,13 +7,22 @@ import CitadelCore
 enum SidebarItem: Hashable {
     case allItems
     case favorites
+    // Per-type filters (all 14 templates)
     case logins
-    case secureNotes
+    case seedPhrases
+    case privateKeys
+    case multiChainWallets
+    case cryptoWallets
+    case serverSSH
+    case apiKeys
+    case databases
+    case emailAccounts
     case creditCards
     case identities
-    case apiKeys
-    case servers
-    case cryptoWallets
+    case secureNotes
+    case recoveryCodes
+    case softwareLicenses
+    // Organization
     case folder(String)
     case project(String)
     case tag(String)
@@ -55,6 +64,8 @@ struct MainView: View {
     @State private var showingRestoreOverwriteWarning = false
     @State private var pendingRestoreURL: URL?
     @State private var pendingRestorePassword: String?
+    @State private var showingNewProject = false
+    @State private var newProjectName = ""
 
     // MARK: - Filtered entries
 
@@ -65,19 +76,33 @@ struct MainView: View {
         case .favorites:
             return appState.entries.filter(\.isFavorite)
         case .logins:
-            return appState.entries.filter { $0.entryType != "secure_note" }
-        case .secureNotes:
-            return appState.entries.filter { $0.entryType == "secure_note" }
+            return appState.entries.filter { $0.entryType == "password" || $0.entryType.isEmpty }
+        case .seedPhrases:
+            return appState.entries.filter { $0.entryType == "seed_phrase" }
+        case .privateKeys:
+            return appState.entries.filter { $0.entryType == "private_key" }
+        case .multiChainWallets:
+            return appState.entries.filter { $0.entryType == "multi_chain_wallet" }
+        case .cryptoWallets:
+            return appState.entries.filter { $0.entryType == "crypto_wallet" }
+        case .serverSSH:
+            return appState.entries.filter { $0.entryType == "server_ssh" }
+        case .apiKeys:
+            return appState.entries.filter { $0.entryType == "api_key" }
+        case .databases:
+            return appState.entries.filter { $0.entryType == "database" }
+        case .emailAccounts:
+            return appState.entries.filter { $0.entryType == "email_account" }
         case .creditCards:
             return appState.entries.filter { $0.entryType == "credit_card" }
         case .identities:
             return appState.entries.filter { $0.entryType == "identity" }
-        case .apiKeys:
-            return appState.entries.filter { $0.entryType == "api_key" }
-        case .servers:
-            return appState.entries.filter { $0.entryType == "server_ssh" }
-        case .cryptoWallets:
-            return appState.entries.filter { EntryTemplate.cryptoTypes.contains($0.entryType) }
+        case .secureNotes:
+            return appState.entries.filter { $0.entryType == "secure_note" }
+        case .recoveryCodes:
+            return appState.entries.filter { $0.entryType == "recovery_codes" }
+        case .softwareLicenses:
+            return appState.entries.filter { $0.entryType == "software_license" }
         case .folder(let g):
             return appState.entries.filter { $0.group == g || $0.group.hasPrefix(g + "/") }
         case .project(let p):
@@ -104,13 +129,25 @@ struct MainView: View {
         return counts.sorted { $0.key < $1.key }.map { (tag: $0.key, count: $0.value) }
     }
 
-    /// Top-level groups treated as "projects" — groups that contain at least one entry.
+    /// Top-level groups treated as "projects".
     private var projects: [String] {
-        let topLevel = Set(appState.entries.compactMap { entry -> String? in
+        var topLevel = Set<String>()
+        // From entries
+        for entry in appState.entries {
             let g = entry.group
-            guard !g.isEmpty else { return nil }
-            return g.split(separator: "/").first.map(String.init) ?? g
-        })
+            guard !g.isEmpty else { continue }
+            if let first = g.split(separator: "/").first {
+                topLevel.insert(String(first))
+            }
+        }
+        // From vault group list (includes empty groups)
+        if let allGroups = try? appState.engine.listGroups() {
+            for g in allGroups {
+                if let first = g.split(separator: "/").first {
+                    topLevel.insert(String(first))
+                }
+            }
+        }
         return topLevel.sorted()
     }
 
@@ -226,6 +263,13 @@ struct MainView: View {
         }
         .sheet(isPresented: $showingAbout) {
             AboutView()
+        }
+        .alert("New Project", isPresented: $showingNewProject) {
+            TextField("Project name", text: $newProjectName)
+            Button("Create") { createProject() }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Enter a name for the new project. This creates a top-level group in your vault.")
         }
         // MARK: Alerts
         .alert("Backup", isPresented: $showingBackupResult) {
@@ -370,16 +414,52 @@ struct MainView: View {
             // Favorites
             sidebarRow("Favorites", icon: "star.fill", color: .yellow, item: .favorites, count: appState.entries.filter(\.isFavorite).count)
 
+            // Projects
+            Section {
+                if projects.isEmpty {
+                    Text("Click + to create a project")
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                        .listRowSeparator(.hidden)
+                } else {
+                    ForEach(projects, id: \.self) { project in
+                        let count = appState.entries.filter { $0.group == project || $0.group.hasPrefix(project + "/") }.count
+                        sidebarRow(project, icon: "folder.fill", color: .indigo, item: .project(project), count: count)
+                    }
+                }
+            } header: {
+                HStack {
+                    Text("PROJECTS")
+                    Spacer()
+                    Button {
+                        newProjectName = ""
+                        showingNewProject = true
+                    } label: {
+                        Image(systemName: "plus")
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(Color.citadelAccent)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+
             // Categories
             Section("Categories") {
                 sidebarRow("All Items", icon: "square.grid.2x2", color: .citadelAccent, item: .allItems, count: appState.entries.count)
-                sidebarRow("Logins", icon: "key.fill", color: .blue, item: .logins, count: appState.entries.filter { $0.entryType != "secure_note" }.count)
-                sidebarRow("Secure Notes", icon: "note.text", color: .purple, item: .secureNotes, count: appState.entries.filter { $0.entryType == "secure_note" }.count)
+                sidebarRow("Logins", icon: "key.fill", color: .blue, item: .logins, count: appState.entries.filter { $0.entryType == "password" || $0.entryType.isEmpty }.count)
+                sidebarRow("Seed Phrases", icon: "rectangle.grid.2x2", color: .orange, item: .seedPhrases, count: appState.entries.filter { $0.entryType == "seed_phrase" }.count)
+                sidebarRow("Private Keys", icon: "lock.fill", color: .orange, item: .privateKeys, count: appState.entries.filter { $0.entryType == "private_key" }.count)
+                sidebarRow("Wallet (Multi-Chain)", icon: "link.circle", color: .orange, item: .multiChainWallets, count: appState.entries.filter { $0.entryType == "multi_chain_wallet" }.count)
+                sidebarRow("Crypto Wallets", icon: "bitcoinsign.circle.fill", color: .orange, item: .cryptoWallets, count: appState.entries.filter { $0.entryType == "crypto_wallet" }.count)
+                sidebarRow("Server / SSH", icon: "server.rack", color: .cyan, item: .serverSSH, count: appState.entries.filter { $0.entryType == "server_ssh" }.count)
+                sidebarRow("API Keys", icon: "curlybraces", color: .red, item: .apiKeys, count: appState.entries.filter { $0.entryType == "api_key" }.count)
+                sidebarRow("Databases", icon: "cylinder", color: .blue, item: .databases, count: appState.entries.filter { $0.entryType == "database" }.count)
+                sidebarRow("Email Accounts", icon: "envelope.fill", color: .blue, item: .emailAccounts, count: appState.entries.filter { $0.entryType == "email_account" }.count)
                 sidebarRow("Credit Cards", icon: "creditcard.fill", color: .green, item: .creditCards, count: appState.entries.filter { $0.entryType == "credit_card" }.count)
-                sidebarRow("Identities", icon: "person.text.rectangle.fill", color: .orange, item: .identities, count: appState.entries.filter { $0.entryType == "identity" }.count)
-                sidebarRow("API Keys", icon: "key.horizontal.fill", color: .red, item: .apiKeys, count: appState.entries.filter { $0.entryType == "api_key" }.count)
-                sidebarRow("Servers", icon: "server.rack", color: .cyan, item: .servers, count: appState.entries.filter { $0.entryType == "server_ssh" }.count)
-                sidebarRow("Crypto Wallets", icon: "bitcoinsign.circle.fill", color: .orange, item: .cryptoWallets, count: appState.entries.filter { EntryTemplate.cryptoTypes.contains($0.entryType) }.count)
+                sidebarRow("Identities", icon: "person.text.rectangle", color: .orange, item: .identities, count: appState.entries.filter { $0.entryType == "identity" }.count)
+                sidebarRow("Secure Notes", icon: "note.text", color: .purple, item: .secureNotes, count: appState.entries.filter { $0.entryType == "secure_note" }.count)
+                sidebarRow("Recovery Codes", icon: "key.viewfinder", color: .pink, item: .recoveryCodes, count: appState.entries.filter { $0.entryType == "recovery_codes" }.count)
+                sidebarRow("Software Licenses", icon: "purchased", color: .teal, item: .softwareLicenses, count: appState.entries.filter { $0.entryType == "software_license" }.count)
             }
 
             // Folders
@@ -389,16 +469,6 @@ struct MainView: View {
                         let displayName = folder.split(separator: "/").last.map(String.init) ?? folder
                         let count = appState.entries.filter { $0.group == folder || $0.group.hasPrefix(folder + "/") }.count
                         sidebarRow(displayName, icon: "folder.fill", color: .orange, item: .folder(folder), count: count)
-                    }
-                }
-            }
-
-            // Projects
-            if !projects.isEmpty {
-                Section("Projects") {
-                    ForEach(projects, id: \.self) { project in
-                        let count = appState.entries.filter { $0.group == project || $0.group.hasPrefix(project + "/") }.count
-                        sidebarRow(project, icon: "tray.full.fill", color: .indigo, item: .project(project), count: count)
                     }
                 }
             }
@@ -470,6 +540,19 @@ struct MainView: View {
     }
 
     // MARK: - Actions
+
+    private func createProject() {
+        let name = newProjectName.trimmingCharacters(in: .whitespaces)
+        guard !name.isEmpty else { return }
+        do {
+            try appState.engine.createGroup(path: name)
+            try appState.save()
+            try appState.refreshEntries()
+            sidebarSelection = .project(name)
+        } catch {
+            // Silently fail — group may already exist
+        }
+    }
 
     private func copySelectedPassword() {
         guard let id = appState.selectedEntryID,

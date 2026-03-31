@@ -536,6 +536,29 @@ pub extern "C" fn vault_list_groups(
     result.unwrap_or(VaultResult::InternalError)
 }
 
+/// Create a group by slash-separated path. No-op if it already exists.
+#[no_mangle]
+pub extern "C" fn vault_create_group(
+    handle: *mut c_void,
+    path: *const c_char,
+) -> VaultResult {
+    if handle.is_null() || path.is_null() {
+        return VaultResult::InternalError;
+    }
+    let result = catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let state = unsafe { &mut *(handle as *mut VaultState) };
+        let path_str = unsafe { std::ffi::CStr::from_ptr(path) }
+            .to_str()
+            .map_err(|_| VaultResult::InternalError)?;
+        state.create_group(path_str)
+    }));
+    match result {
+        Ok(Ok(())) => VaultResult::Ok,
+        Ok(Err(e)) => e,
+        Err(_) => VaultResult::InternalError,
+    }
+}
+
 /// Free a group list returned by `vault_list_groups`.
 #[no_mangle]
 pub extern "C" fn group_list_free(groups: *mut *mut c_char, count: u32) {
