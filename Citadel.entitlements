@@ -4,5 +4,13 @@
 <dict>
     <key>com.apple.security.network.client</key>
     <true/>
+    <key>keychain-access-groups</key>
+    <array>
+        <string>L7A43Q2B5Y.com.lemg-lab.citadel</string>
+    </array>
+    <key>com.apple.application-identifier</key>
+    <string>L7A43Q2B5Y.com.lemg-lab.citadel</string>
+    <key>com.apple.developer.team-identifier</key>
+    <string>L7A43Q2B5Y</string>
 </dict>
 </plist>

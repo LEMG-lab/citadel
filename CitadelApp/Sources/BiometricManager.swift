@@ -60,6 +60,7 @@ public final class BiometricManager {
         context.interactionNotAllowed = true
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
+            kSecUseDataProtectionKeychain as String: true,
             kSecAttrService as String: Self.keychainService,
             kSecAttrAccount as String: keychainAccount,
             kSecReturnData as String: false,
@@ -123,9 +124,10 @@ public final class BiometricManager {
         // 5. Remove any existing enrollment first
         unenroll()
 
-        // 6. Store in Keychain with biometric protection (no kSecAttrAccessGroup)
+        // 6. Store in Keychain with biometric protection
         let addQuery: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
+            kSecUseDataProtectionKeychain as String: true,
             kSecAttrService as String: Self.keychainService,
             kSecAttrAccount as String: keychainAccount,
             kSecValueData as String: blob,
@@ -147,33 +149,46 @@ public final class BiometricManager {
     // MARK: - Unlock
 
     /// Attempt biometric unlock. The Keychain query triggers Touch ID automatically.
+    /// SecItemCopyMatching is dispatched off the main thread to avoid blocking the UI.
     public func unlock() async throws -> Data {
         guard isEnabled else {
             throw BiometricError.notEnrolled
         }
 
-        let context = LAContext()
-        context.localizedReason = "Unlock Smaug"
+        // Capture values for use in background closure
+        let service = Self.keychainService
+        let account = keychainAccount
 
-        let query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: Self.keychainService,
-            kSecAttrAccount as String: keychainAccount,
-            kSecReturnData as String: true,
-            kSecUseAuthenticationContext as String: context,
-        ]
+        // Dispatch Keychain query to background thread — SecItemCopyMatching with
+        // biometric access control presents a system Touch ID dialog that blocks
+        let (blob, queryStatus): (Data?, OSStatus) = await withCheckedContinuation { continuation in
+            DispatchQueue.global(qos: .userInitiated).async {
+                let context = LAContext()
+                context.localizedReason = "Unlock Smaug"
 
-        var result: AnyObject?
-        let status = SecItemCopyMatching(query as CFDictionary, &result)
+                let query: [String: Any] = [
+                    kSecClass as String: kSecClassGenericPassword,
+                    kSecUseDataProtectionKeychain as String: true,
+                    kSecAttrService as String: service,
+                    kSecAttrAccount as String: account,
+                    kSecReturnData as String: true,
+                    kSecUseAuthenticationContext as String: context,
+                ]
 
-        guard status == errSecSuccess, let blob = result as? Data else {
-            if status == errSecUserCanceled || status == errSecAuthFailed {
+                var result: AnyObject?
+                let status = SecItemCopyMatching(query as CFDictionary, &result)
+                continuation.resume(returning: (result as? Data, status))
+            }
+        }
+
+        guard queryStatus == errSecSuccess, let blob else {
+            if queryStatus == errSecUserCanceled || queryStatus == errSecAuthFailed {
                 throw BiometricError.authFailed
             }
-            if status == errSecItemNotFound {
+            if queryStatus == errSecItemNotFound {
                 throw BiometricError.notEnrolled
             }
-            Self.logger.error("Keychain query failed: \(status)")
+            Self.logger.error("Keychain query failed: \(queryStatus)")
             throw BiometricError.authFailed
         }
 
@@ -195,6 +210,7 @@ public final class BiometricManager {
     public func unenroll() {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
+            kSecUseDataProtectionKeychain as String: true,
             kSecAttrService as String: Self.keychainService,
             kSecAttrAccount as String: keychainAccount,
         ]
@@ -213,6 +229,7 @@ public final class BiometricManager {
 
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
+            kSecUseDataProtectionKeychain as String: true,
             kSecAttrService as String: Self.keychainService,
             kSecAttrAccount as String: keychainAccount,
         ]

@@ -28,8 +28,18 @@ cp "$ROOT/CitadelApp/.build/arm64-apple-macosx/release/Citadel" "$APP/Contents/M
 # Copy Info.plist
 cp "$ROOT/CitadelApp/Info.plist" "$APP/Contents/"
 
-echo "==> Signing with hardened runtime (Developer ID)..."
-codesign --force --deep --options runtime \
+# Embed provisioning profile
+cp "$ROOT/embedded.provisionprofile" "$APP/Contents/embedded.provisionprofile"
+
+echo "==> Signing executable with hardened runtime..."
+codesign --force --options runtime \
+    --entitlements "$ROOT/Citadel.entitlements" \
+    --sign "Apple Development: luis@expertop.com (AKT66WTDPP)" \
+    "$APP/Contents/MacOS/Smaug"
+
+echo "==> Signing app bundle..."
+codesign --force --options runtime \
+    --entitlements "$ROOT/Citadel.entitlements" \
     --sign "Apple Development: luis@expertop.com (AKT66WTDPP)" \
     "$APP"
 
