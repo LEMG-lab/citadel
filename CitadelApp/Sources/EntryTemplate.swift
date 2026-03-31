@@ -37,7 +37,7 @@ public enum EntryTemplate: String, CaseIterable, Identifiable {
         case .login:            return "Login"
         case .seedPhrase:       return "Seed Phrase"
         case .privateKey:       return "Private Key"
-        case .multiChainWallet: return "Multi-Chain Wallet"
+        case .multiChainWallet: return "Wallet (Multi-Chain)"
         case .cryptoWallet:     return "Crypto Wallet"
         case .serverSSH:        return "Server / SSH"
         case .apiKey:           return "API Key"

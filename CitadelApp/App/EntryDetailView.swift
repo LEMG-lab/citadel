@@ -25,6 +25,8 @@ struct EntryDetailView: View {
 
     @State private var showingSeedWords = false
     @State private var seedWordDismissTask: Task<Void, Never>?
+    @State private var revealedFieldKeys: Set<String> = []
+    @State private var revealedSeedWords: Set<Int> = []
 
     private var isSecureNote: Bool {
         entry?.entryType == "secure_note"
@@ -360,11 +362,17 @@ struct EntryDetailView: View {
     @ViewBuilder
     private func notesCard(_ entry: VaultEntryDetail) -> some View {
         FieldCard(label: isSecureNote ? "Content" : "Notes") {
-            Text(entry.notes)
-                .font(.system(size: 13))
-                .textSelection(.enabled)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .fixedSize(horizontal: false, vertical: true)
+            HStack(alignment: .top, spacing: 10) {
+                Text(entry.notes)
+                    .font(.system(size: 13))
+                    .textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                copyButton {
+                    appState.clipboard.copySecure(entry.notes)
+                }
+            }
         }
     }
 
@@ -437,10 +445,28 @@ struct EntryDetailView: View {
                                 .font(.system(size: 10, weight: .bold, design: .monospaced))
                                 .foregroundStyle(Color.citadelSecondary)
                                 .frame(width: 18, alignment: .trailing)
-                            Text(String(repeating: "\u{2022}", count: 5))
-                                .font(.system(size: 11))
-                                .foregroundStyle(.secondary)
+                            if revealedSeedWords.contains(item.num) {
+                                Text(item.word)
+                                    .font(.system(size: 11, design: .monospaced))
+                                    .foregroundStyle(.primary)
+                            } else {
+                                Text(String(repeating: "\u{2022}", count: 5))
+                                    .font(.system(size: 11))
+                                    .foregroundStyle(.secondary)
+                            }
                             Spacer()
+                            Button {
+                                if revealedSeedWords.contains(item.num) {
+                                    revealedSeedWords.remove(item.num)
+                                } else {
+                                    revealedSeedWords.insert(item.num)
+                                }
+                            } label: {
+                                Image(systemName: revealedSeedWords.contains(item.num) ? "eye.fill" : "eye")
+                                    .font(.system(size: 9))
+                                    .foregroundStyle(revealedSeedWords.contains(item.num) ? Color.citadelAccent : Color.citadelSecondary)
+                            }
+                            .buttonStyle(.plain)
                             Button {
                                 appState.clipboard.copySecure(item.word)
                             } label: {
@@ -568,12 +594,36 @@ struct EntryDetailView: View {
                                 .foregroundStyle(Color.citadelSecondary)
                                 .frame(width: 20)
 
-                            Text(field.isProtected ? String(repeating: "\u{2022}", count: 8) : field.value)
-                                .font(.system(size: 13))
-                                .textSelection(.enabled)
-                                .lineLimit(3)
+                            if field.isProtected && !revealedFieldKeys.contains(field.key) {
+                                Text(String(repeating: "\u{2022}", count: 8))
+                                    .font(.system(size: 13))
+                                    .foregroundStyle(.primary.opacity(0.6))
+                            } else {
+                                Text(field.value)
+                                    .font(.system(size: 13, design: field.isProtected ? .monospaced : .default))
+                                    .textSelection(.enabled)
+                                    .lineLimit(3)
+                            }
 
                             Spacer()
+
+                            if field.isProtected {
+                                Button {
+                                    if revealedFieldKeys.contains(field.key) {
+                                        revealedFieldKeys.remove(field.key)
+                                    } else {
+                                        revealedFieldKeys.insert(field.key)
+                                    }
+                                } label: {
+                                    Image(systemName: revealedFieldKeys.contains(field.key) ? "eye.fill" : "eye")
+                                        .font(.system(size: 12))
+                                        .foregroundStyle(revealedFieldKeys.contains(field.key) ? Color.citadelAccent : Color.citadelSecondary)
+                                        .padding(6)
+                                        .background(Color.citadelSecondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+                                }
+                                .buttonStyle(.plain)
+                                .help("Reveal")
+                            }
 
                             copyButton {
                                 appState.clipboard.copySecure(field.value)
@@ -809,6 +859,8 @@ struct EntryDetailView: View {
     private func loadEntry() {
         showPassword = false
         showPasswordHistory = false
+        revealedFieldKeys.removeAll()
+        revealedSeedWords.removeAll()
         do {
             entry = try appState.engine.getEntry(uuid: entryID)
             passwordHistory = (try? appState.engine.getEntryHistory(uuid: entryID)) ?? []

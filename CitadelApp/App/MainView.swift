@@ -15,6 +15,7 @@ enum SidebarItem: Hashable {
     case servers
     case cryptoWallets
     case folder(String)
+    case project(String)
     case tag(String)
     case trash
 }
@@ -76,9 +77,11 @@ struct MainView: View {
         case .servers:
             return appState.entries.filter { $0.entryType == "server_ssh" }
         case .cryptoWallets:
-            return appState.entries.filter { $0.entryType == "crypto_wallet" }
+            return appState.entries.filter { EntryTemplate.cryptoTypes.contains($0.entryType) }
         case .folder(let g):
             return appState.entries.filter { $0.group == g || $0.group.hasPrefix(g + "/") }
+        case .project(let p):
+            return appState.entries.filter { $0.group == p || $0.group.hasPrefix(p + "/") }
         case .tag(let t):
             return appState.entries.filter { $0.tagList.contains(t) }
         case .trash:
@@ -99,6 +102,16 @@ struct MainView: View {
             }
         }
         return counts.sorted { $0.key < $1.key }.map { (tag: $0.key, count: $0.value) }
+    }
+
+    /// Top-level groups treated as "projects" — groups that contain at least one entry.
+    private var projects: [String] {
+        let topLevel = Set(appState.entries.compactMap { entry -> String? in
+            let g = entry.group
+            guard !g.isEmpty else { return nil }
+            return g.split(separator: "/").first.map(String.init) ?? g
+        })
+        return topLevel.sorted()
     }
 
     // MARK: - Body
@@ -366,7 +379,7 @@ struct MainView: View {
                 sidebarRow("Identities", icon: "person.text.rectangle.fill", color: .orange, item: .identities, count: appState.entries.filter { $0.entryType == "identity" }.count)
                 sidebarRow("API Keys", icon: "key.horizontal.fill", color: .red, item: .apiKeys, count: appState.entries.filter { $0.entryType == "api_key" }.count)
                 sidebarRow("Servers", icon: "server.rack", color: .cyan, item: .servers, count: appState.entries.filter { $0.entryType == "server_ssh" }.count)
-                sidebarRow("Crypto Wallets", icon: "bitcoinsign.circle.fill", color: .orange, item: .cryptoWallets, count: appState.entries.filter { $0.entryType == "crypto_wallet" }.count)
+                sidebarRow("Crypto Wallets", icon: "bitcoinsign.circle.fill", color: .orange, item: .cryptoWallets, count: appState.entries.filter { EntryTemplate.cryptoTypes.contains($0.entryType) }.count)
             }
 
             // Folders
@@ -376,6 +389,16 @@ struct MainView: View {
                         let displayName = folder.split(separator: "/").last.map(String.init) ?? folder
                         let count = appState.entries.filter { $0.group == folder || $0.group.hasPrefix(folder + "/") }.count
                         sidebarRow(displayName, icon: "folder.fill", color: .orange, item: .folder(folder), count: count)
+                    }
+                }
+            }
+
+            // Projects
+            if !projects.isEmpty {
+                Section("Projects") {
+                    ForEach(projects, id: \.self) { project in
+                        let count = appState.entries.filter { $0.group == project || $0.group.hasPrefix(project + "/") }.count
+                        sidebarRow(project, icon: "tray.full.fill", color: .indigo, item: .project(project), count: count)
                     }
                 }
             }
