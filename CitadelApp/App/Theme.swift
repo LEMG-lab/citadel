@@ -192,6 +192,16 @@ struct EntryIcon: View {
         return colors[hash % colors.count]
     }
 
+    private var cryptoIcon: String? {
+        switch entryType {
+        case "seed_phrase":        return "rectangle.grid.2x2"
+        case "private_key":        return "lock.fill"
+        case "multi_chain_wallet": return "link.circle"
+        case "crypto_wallet":      return "bitcoinsign.circle"
+        default:                   return nil
+        }
+    }
+
     var body: some View {
         if entryType == "secure_note" {
             ZStack {
@@ -199,6 +209,15 @@ struct EntryIcon: View {
                     .fill(iconColor.gradient)
                     .frame(width: size, height: size)
                 Image(systemName: "note.text")
+                    .font(.system(size: size * 0.4, weight: .semibold))
+                    .foregroundStyle(.white)
+            }
+        } else if let symbol = cryptoIcon {
+            ZStack {
+                RoundedRectangle(cornerRadius: size * 0.22, style: .continuous)
+                    .fill(Color.orange.gradient)
+                    .frame(width: size, height: size)
+                Image(systemName: symbol)
                     .font(.system(size: size * 0.4, weight: .semibold))
                     .foregroundStyle(.white)
             }

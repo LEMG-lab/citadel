@@ -49,6 +49,22 @@ struct EntryEditView: View {
         entryType == "secure_note"
     }
 
+    private var isSeedPhraseType: Bool {
+        entryType == "seed_phrase" || entryType == "multi_chain_wallet"
+    }
+
+    private var isPrivateKeyType: Bool {
+        entryType == "private_key"
+    }
+
+    private var isCryptoType: Bool {
+        EntryTemplate.cryptoTypes.contains(entryType)
+    }
+
+    private var usesStandardFields: Bool {
+        selectedTemplate.usesStandardFields
+    }
+
     private var existingGroups: [String] {
         (try? appState.engine.listGroups()) ?? []
     }
@@ -206,7 +222,38 @@ struct EntryEditView: View {
 
             styledField("Title", text: $title, icon: "character.cursor.ibeam")
 
-            if !isSecureNote {
+            if isPrivateKeyType {
+                // Private Key uses the standard password field for the key
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack(spacing: 8) {
+                        Image(systemName: "lock")
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundStyle(Color.citadelSecondary)
+                            .frame(width: 16)
+
+                        if showPassword {
+                            TextField(text: $password, prompt: Text("Private Key").foregroundStyle(.tertiary)) {}
+                                .font(.system(size: 13, design: .monospaced))
+                        } else {
+                            SecureField(text: $password, prompt: Text("Private Key").foregroundStyle(.tertiary)) {}
+                                .font(.system(size: 13))
+                        }
+
+                        Button { showPassword.toggle() } label: {
+                            Image(systemName: showPassword ? "eye.slash" : "eye")
+                                .font(.system(size: 12))
+                                .foregroundStyle(Color.citadelSecondary)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                    .textFieldStyle(.plain)
+                    .padding(10)
+                    .background(Color.cardBackground.opacity(0.6), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                    .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).stroke(Color.subtleSeparator.opacity(0.3), lineWidth: 0.5))
+                }
+            }
+
+            if usesStandardFields {
                 styledField("Username", text: $username, icon: "person")
 
                 // Password field with strength bar
@@ -358,12 +405,54 @@ struct EntryEditView: View {
 
     // MARK: - Custom Fields
 
+    private var seedWordFields: [Binding<EditableCustomField>] {
+        $customFields.filter { $0.wrappedValue.key.hasPrefix(EntryTemplate.seedWordPrefix) }
+    }
+
+    private var nonSeedWordFields: [Binding<EditableCustomField>] {
+        $customFields.filter { !$0.wrappedValue.key.hasPrefix(EntryTemplate.seedWordPrefix) }
+    }
+
+    @ViewBuilder
+    private var seedWordsSection: some View {
+        let words = seedWordFields
+        if !words.isEmpty {
+            VStack(alignment: .leading, spacing: 10) {
+                SectionHeader(title: "Seed Phrase Words")
+
+                let columns = [GridItem(.flexible()), GridItem(.flexible()), GridItem(.flexible()), GridItem(.flexible())]
+                LazyVGrid(columns: columns, spacing: 8) {
+                    ForEach(words) { $field in
+                        let num = String(field.key.suffix(2))
+                        HStack(spacing: 4) {
+                            Text(num)
+                                .font(.system(size: 10, weight: .medium, design: .monospaced))
+                                .foregroundStyle(Color.citadelSecondary)
+                                .frame(width: 18)
+                            SecureField(text: $field.value, prompt: Text("").foregroundStyle(.tertiary)) {}
+                                .font(.system(size: 12))
+                                .textFieldStyle(.plain)
+                        }
+                        .padding(6)
+                        .background(Color.cardBackground.opacity(0.6), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+                        .overlay(RoundedRectangle(cornerRadius: 6, style: .continuous).stroke(Color.subtleSeparator.opacity(0.3), lineWidth: 0.5))
+                    }
+                }
+            }
+        }
+    }
+
     @ViewBuilder
     private var customFieldsSection: some View {
+        if isSeedPhraseType {
+            seedWordsSection
+        }
+
         VStack(alignment: .leading, spacing: 10) {
             SectionHeader(title: "Custom Fields")
 
-            ForEach($customFields) { $field in
+            let fields = isSeedPhraseType ? nonSeedWordFields : Array($customFields)
+            ForEach(fields) { $field in
                 HStack(spacing: 8) {
                     TextField(text: $field.key, prompt: Text("Name").foregroundStyle(.tertiary)) {}
                         .textFieldStyle(.plain)

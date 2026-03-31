@@ -23,8 +23,16 @@ struct EntryDetailView: View {
     @State private var attachmentToOpen: String?
     @State private var showingAttachmentWarning = false
 
+    @State private var showingSeedWords = false
+    @State private var seedWordDismissTask: Task<Void, Never>?
+
     private var isSecureNote: Bool {
         entry?.entryType == "secure_note"
+    }
+
+    private var isCryptoSeedType: Bool {
+        let t = entry?.entryType ?? ""
+        return t == "seed_phrase" || t == "multi_chain_wallet"
     }
 
     var body: some View {
@@ -78,6 +86,10 @@ struct EntryDetailView: View {
 
                     if !isSecureNote, !entry.otpURI.isEmpty, TOTPGenerator(uri: entry.otpURI) != nil {
                         totpCard
+                    }
+
+                    if isCryptoSeedType {
+                        seedPhraseSection(entry)
                     }
 
                     if !entry.customFields.isEmpty {
@@ -395,31 +407,177 @@ struct EntryDetailView: View {
         return String(code.prefix(3)) + " " + String(code.suffix(3))
     }
 
+    // MARK: - Seed Phrase Section
+
+    private func seedWords(from entry: VaultEntryDetail) -> [(num: Int, word: String)] {
+        entry.customFields
+            .filter { $0.key.hasPrefix(EntryTemplate.seedWordPrefix) }
+            .compactMap { field -> (num: Int, word: String)? in
+                guard let n = Int(field.key.suffix(2)) else { return nil }
+                return (n, field.value)
+            }
+            .filter { !$0.word.isEmpty }
+            .sorted { $0.num < $1.num }
+    }
+
+    @ViewBuilder
+    private func seedPhraseSection(_ entry: VaultEntryDetail) -> some View {
+        let words = seedWords(from: entry)
+        if !words.isEmpty {
+            VStack(alignment: .leading, spacing: 8) {
+                SectionHeader(title: "Seed Phrase (\(words.count) words)")
+                    .padding(.top, 4)
+
+                // Masked grid
+                let columns = [GridItem(.flexible()), GridItem(.flexible()), GridItem(.flexible()), GridItem(.flexible())]
+                LazyVGrid(columns: columns, spacing: 6) {
+                    ForEach(words, id: \.num) { item in
+                        HStack(spacing: 4) {
+                            Text("\(item.num)")
+                                .font(.system(size: 10, weight: .bold, design: .monospaced))
+                                .foregroundStyle(Color.citadelSecondary)
+                                .frame(width: 18, alignment: .trailing)
+                            Text(String(repeating: "\u{2022}", count: 5))
+                                .font(.system(size: 11))
+                                .foregroundStyle(.secondary)
+                            Spacer()
+                            Button {
+                                appState.clipboard.copySecure(item.word)
+                            } label: {
+                                Image(systemName: "doc.on.doc")
+                                    .font(.system(size: 9))
+                                    .foregroundStyle(Color.citadelSecondary)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 5)
+                        .background(Color.cardBackground.opacity(0.6), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+                        .overlay(RoundedRectangle(cornerRadius: 6, style: .continuous).stroke(Color.subtleSeparator.opacity(0.3), lineWidth: 0.5))
+                    }
+                }
+
+                // Action buttons
+                HStack(spacing: 12) {
+                    Button {
+                        let phrase = words.map(\.word).joined(separator: " ")
+                        appState.clipboard.copyPassword(Data(phrase.utf8))
+                    } label: {
+                        HStack(spacing: 5) {
+                            Image(systemName: "doc.on.doc.fill")
+                                .font(.system(size: 12))
+                            Text("Copy Full Seed Phrase")
+                                .font(.system(size: 12, weight: .medium))
+                        }
+                        .foregroundStyle(Color.citadelAccent)
+                    }
+                    .buttonStyle(.plain)
+
+                    Button {
+                        showingSeedWords = true
+                        seedWordDismissTask?.cancel()
+                        seedWordDismissTask = Task {
+                            try? await Task.sleep(for: .seconds(30))
+                            if !Task.isCancelled {
+                                showingSeedWords = false
+                            }
+                        }
+                    } label: {
+                        HStack(spacing: 5) {
+                            Image(systemName: "eye")
+                                .font(.system(size: 12))
+                            Text("Show All Words")
+                                .font(.system(size: 12, weight: .medium))
+                        }
+                        .foregroundStyle(Color.citadelAccent)
+                    }
+                    .buttonStyle(.plain)
+                }
+                .padding(.top, 4)
+            }
+            .sheet(isPresented: $showingSeedWords) {
+                seedWordDismissTask?.cancel()
+            } content: {
+                seedWordsOverlay(words)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func seedWordsOverlay(_ words: [(num: Int, word: String)]) -> some View {
+        VStack(spacing: 16) {
+            HStack {
+                Text("Seed Phrase")
+                    .font(.system(size: 16, weight: .bold))
+                Spacer()
+                Text("Auto-dismiss in 30s")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+            }
+
+            let columns = [GridItem(.flexible()), GridItem(.flexible()), GridItem(.flexible()), GridItem(.flexible())]
+            LazyVGrid(columns: columns, spacing: 8) {
+                ForEach(words, id: \.num) { item in
+                    HStack(spacing: 4) {
+                        Text("\(item.num)")
+                            .font(.system(size: 11, weight: .bold, design: .monospaced))
+                            .foregroundStyle(Color.citadelSecondary)
+                            .frame(width: 22, alignment: .trailing)
+                        Text(item.word)
+                            .font(.system(size: 13, design: .monospaced))
+                            .foregroundStyle(.primary)
+                        Spacer()
+                    }
+                    .padding(8)
+                    .background(Color.cardBackground, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+                    .overlay(RoundedRectangle(cornerRadius: 6, style: .continuous).stroke(Color.subtleSeparator.opacity(0.3), lineWidth: 0.5))
+                }
+            }
+
+            Button("Dismiss") {
+                showingSeedWords = false
+                seedWordDismissTask?.cancel()
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(.citadelAccent)
+            .keyboardShortcut(.defaultAction)
+        }
+        .padding(24)
+        .frame(width: 500)
+        .interactiveDismissDisabled(false)
+    }
+
     // MARK: - Custom Fields
 
     @ViewBuilder
     private func customFieldsSection(_ entry: VaultEntryDetail) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            SectionHeader(title: "Custom Fields")
-                .padding(.top, 4)
+        let fields = isCryptoSeedType
+            ? entry.customFields.filter { !$0.key.hasPrefix(EntryTemplate.seedWordPrefix) }
+            : entry.customFields
 
-            ForEach(entry.customFields) { field in
-                FieldCard(label: field.key) {
-                    HStack(spacing: 10) {
-                        Image(systemName: field.isProtected ? "lock" : "text.alignleft")
-                            .font(.system(size: 13, weight: .medium))
-                            .foregroundStyle(Color.citadelSecondary)
-                            .frame(width: 20)
+        if !fields.isEmpty {
+            VStack(alignment: .leading, spacing: 8) {
+                SectionHeader(title: "Custom Fields")
+                    .padding(.top, 4)
 
-                        Text(field.isProtected ? String(repeating: "\u{2022}", count: 8) : field.value)
-                            .font(.system(size: 13))
-                            .textSelection(.enabled)
-                            .lineLimit(3)
+                ForEach(fields) { field in
+                    FieldCard(label: field.key) {
+                        HStack(spacing: 10) {
+                            Image(systemName: field.isProtected ? "lock" : "text.alignleft")
+                                .font(.system(size: 13, weight: .medium))
+                                .foregroundStyle(Color.citadelSecondary)
+                                .frame(width: 20)
 
-                        Spacer()
+                            Text(field.isProtected ? String(repeating: "\u{2022}", count: 8) : field.value)
+                                .font(.system(size: 13))
+                                .textSelection(.enabled)
+                                .lineLimit(3)
 
-                        copyButton {
-                            appState.clipboard.copySecure(field.value)
+                            Spacer()
+
+                            copyButton {
+                                appState.clipboard.copySecure(field.value)
+                            }
                         }
                     }
                 }

@@ -16,6 +16,9 @@ public struct TemplateField {
 /// Entry templates that pre-populate custom fields for common credential types.
 public enum EntryTemplate: String, CaseIterable, Identifiable {
     case login
+    case seedPhrase
+    case privateKey
+    case multiChainWallet
     case cryptoWallet
     case serverSSH
     case apiKey
@@ -31,50 +34,59 @@ public enum EntryTemplate: String, CaseIterable, Identifiable {
 
     public var displayName: String {
         switch self {
-        case .login:           return "Login"
-        case .cryptoWallet:    return "Crypto Wallet"
-        case .serverSSH:       return "Server / SSH"
-        case .apiKey:          return "API Key"
-        case .database:        return "Database"
-        case .emailAccount:    return "Email Account"
-        case .creditCard:      return "Credit Card"
-        case .identity:        return "Identity"
-        case .secureNote:      return "Secure Note"
-        case .recoveryCodes:   return "Recovery Codes"
-        case .softwareLicense: return "Software License"
+        case .login:            return "Login"
+        case .seedPhrase:       return "Seed Phrase"
+        case .privateKey:       return "Private Key"
+        case .multiChainWallet: return "Multi-Chain Wallet"
+        case .cryptoWallet:     return "Crypto Wallet"
+        case .serverSSH:        return "Server / SSH"
+        case .apiKey:           return "API Key"
+        case .database:         return "Database"
+        case .emailAccount:     return "Email Account"
+        case .creditCard:       return "Credit Card"
+        case .identity:         return "Identity"
+        case .secureNote:       return "Secure Note"
+        case .recoveryCodes:    return "Recovery Codes"
+        case .softwareLicense:  return "Software License"
         }
     }
 
     public var icon: String {
         switch self {
-        case .login:           return "key.fill"
-        case .cryptoWallet:    return "bitcoinsign.circle"
-        case .serverSSH:       return "server.rack"
-        case .apiKey:          return "curlybraces"
-        case .database:        return "cylinder"
-        case .emailAccount:    return "envelope.fill"
-        case .creditCard:      return "creditcard.fill"
-        case .identity:        return "person.text.rectangle"
-        case .secureNote:      return "note.text"
-        case .recoveryCodes:   return "key.viewfinder"
-        case .softwareLicense: return "purchased"
+        case .login:            return "key.fill"
+        case .seedPhrase:       return "rectangle.grid.2x2"
+        case .privateKey:       return "lock.fill"
+        case .multiChainWallet: return "link.circle"
+        case .cryptoWallet:     return "bitcoinsign.circle"
+        case .serverSSH:        return "server.rack"
+        case .apiKey:           return "curlybraces"
+        case .database:         return "cylinder"
+        case .emailAccount:     return "envelope.fill"
+        case .creditCard:       return "creditcard.fill"
+        case .identity:         return "person.text.rectangle"
+        case .secureNote:       return "note.text"
+        case .recoveryCodes:    return "key.viewfinder"
+        case .softwareLicense:  return "purchased"
         }
     }
 
     /// The entry type string stored in the Citadel_EntryType custom field.
     public var typeString: String {
         switch self {
-        case .login:           return "password"
-        case .cryptoWallet:    return "crypto_wallet"
-        case .serverSSH:       return "server_ssh"
-        case .apiKey:          return "api_key"
-        case .database:        return "database"
-        case .emailAccount:    return "email_account"
-        case .creditCard:      return "credit_card"
-        case .identity:        return "identity"
-        case .secureNote:      return "secure_note"
-        case .recoveryCodes:   return "recovery_codes"
-        case .softwareLicense: return "software_license"
+        case .login:            return "password"
+        case .seedPhrase:       return "seed_phrase"
+        case .privateKey:       return "private_key"
+        case .multiChainWallet: return "multi_chain_wallet"
+        case .cryptoWallet:     return "crypto_wallet"
+        case .serverSSH:        return "server_ssh"
+        case .apiKey:           return "api_key"
+        case .database:         return "database"
+        case .emailAccount:     return "email_account"
+        case .creditCard:       return "credit_card"
+        case .identity:         return "identity"
+        case .secureNote:       return "secure_note"
+        case .recoveryCodes:    return "recovery_codes"
+        case .softwareLicense:  return "software_license"
         }
     }
 
@@ -86,11 +98,29 @@ public enum EntryTemplate: String, CaseIterable, Identifiable {
     /// Whether the template uses the standard username/password/URL fields.
     public var usesStandardFields: Bool {
         switch self {
-        case .secureNote, .identity, .creditCard:
+        case .secureNote, .identity, .creditCard, .seedPhrase, .privateKey, .multiChainWallet:
             return false
         default:
             return true
         }
+    }
+
+    /// Whether this is a crypto seed phrase type (seed_phrase or multi_chain_wallet).
+    public var hasSeedWords: Bool {
+        self == .seedPhrase || self == .multiChainWallet
+    }
+
+    /// Whether this is any crypto-related entry type.
+    public static let cryptoTypes: Set<String> = [
+        "seed_phrase", "private_key", "multi_chain_wallet", "crypto_wallet"
+    ]
+
+    /// Seed word field key prefix.
+    public static let seedWordPrefix = "Citadel_SeedWord_"
+
+    /// Generate seed word field keys for a given count.
+    public static func seedWordKeys(count: Int) -> [String] {
+        (1...count).map { String(format: "%@%02d", seedWordPrefix, $0) }
     }
 
     /// Custom fields to pre-populate.
@@ -98,6 +128,45 @@ public enum EntryTemplate: String, CaseIterable, Identifiable {
         switch self {
         case .login:
             return [] // Uses standard title/username/password/URL/notes
+
+        case .seedPhrase:
+            var fields = [
+                TemplateField(key: "Network", placeholder: "Ethereum / Solana / Bitcoin / Avalanche / Polygon / Base / Arbitrum"),
+                TemplateField(key: "Wallet App", placeholder: "MetaMask / Phantom / Rabby / Ledger / Trezor"),
+                TemplateField(key: "Wallet Address", placeholder: "0x... or public address"),
+                TemplateField(key: "Seed Phrase Length", placeholder: "24"),
+                TemplateField(key: "Derivation Path", placeholder: "m/44'/60'/0'/0/0"),
+            ]
+            // 24 individual seed word fields
+            for i in 1...24 {
+                fields.append(TemplateField(key: String(format: "Citadel_SeedWord_%02d", i), placeholder: "Word \(i)", isProtected: true))
+            }
+            return fields
+
+        case .privateKey:
+            return [
+                TemplateField(key: "Network", placeholder: "Ethereum / Solana / Bitcoin / Avalanche / Polygon / Base / Arbitrum"),
+                TemplateField(key: "Key Format", placeholder: "Hex / Base58 / WIF"),
+                TemplateField(key: "Associated Address", placeholder: "0x... or public address"),
+                TemplateField(key: "Usage", placeholder: "Deployer / Validator / Hot Wallet / Cold Wallet"),
+            ]
+
+        case .multiChainWallet:
+            var fields = [
+                TemplateField(key: "Wallet App", placeholder: "MetaMask / Phantom / Rabby / Ledger"),
+                TemplateField(key: "Seed Phrase Length", placeholder: "24"),
+                TemplateField(key: "Derivation Path", placeholder: "m/44'/60'/0'/0/0"),
+            ]
+            for i in 1...24 {
+                fields.append(TemplateField(key: String(format: "Citadel_SeedWord_%02d", i), placeholder: "Word \(i)", isProtected: true))
+            }
+            fields.append(contentsOf: [
+                TemplateField(key: "ETH Address", placeholder: "0x..."),
+                TemplateField(key: "SOL Address", placeholder: ""),
+                TemplateField(key: "BTC Address", placeholder: ""),
+                TemplateField(key: "AVAX Address", placeholder: ""),
+            ])
+            return fields
 
         case .cryptoWallet:
             return [
