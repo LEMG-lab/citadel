@@ -755,55 +755,43 @@ struct AboutView: View {
             Spacer().frame(height: 16)
 
             Text("Smaug")
-                .font(.system(size: 28, weight: .bold))
+                .font(.system(size: 24, weight: .bold))
 
             Text("Personal Vault")
-                .font(.system(size: 13))
+                .font(.system(size: 14))
                 .foregroundStyle(.secondary)
-
-            if let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String {
-                Text("v\(version)")
-                    .font(.system(size: 12, design: .monospaced))
-                    .foregroundStyle(.tertiary)
-                    .padding(.top, 2)
-            }
 
             Spacer().frame(height: 20)
 
-            VStack(spacing: 4) {
-                Text("Created by Luis Maumejean G.")
-                    .font(.system(size: 12, weight: .medium))
-                Text("LEMG-lab \u{00B7} Swiss Tech Corp AG")
-                    .font(.system(size: 11))
+            Text("Created by Luis Maumejean G.")
+                .font(.system(size: 14))
+
+            Text("luismaumejean@gmail.com")
+                .font(.system(size: 13))
+                .foregroundStyle(.secondary)
+
+            Spacer().frame(height: 16)
+
+            if let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String {
+                Text("Version \(version)")
+                    .font(.system(size: 13))
                     .foregroundStyle(.secondary)
             }
 
             Spacer().frame(height: 16)
 
-            Text("Rust + SwiftUI \u{00B7} ChaCha20-256 \u{00B7} Argon2id (up to 1GB) \u{00B7} Secure Enclave Touch ID")
-                .font(.system(size: 10))
+            Text("Rust + SwiftUI \u{00B7} ChaCha20-256 \u{00B7} Argon2id \u{00B7} Secure Enclave")
+                .font(.system(size: 12))
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
-                .frame(width: 300)
 
-            Spacer().frame(height: 16)
+            Spacer().frame(height: 8)
 
             Link("github.com/LEMG-lab/citadel", destination: URL(string: "https://github.com/LEMG-lab/citadel")!)
-                .font(.system(size: 11))
+                .font(.system(size: 12))
                 .foregroundStyle(Color.citadelAccent)
 
-            Spacer().frame(height: 16)
-
-            VStack(spacing: 2) {
-                Text("\u{00A9} 2026 Luis Maumejean G. All rights reserved.")
-                    .font(.system(size: 10))
-                    .foregroundStyle(.tertiary)
-                Text("MIT License")
-                    .font(.system(size: 10))
-                    .foregroundStyle(.tertiary)
-            }
-
-            Spacer().frame(height: 20)
+            Spacer().frame(height: 24)
 
             Button("OK") { dismiss() }
                 .buttonStyle(.borderedProminent)
@@ -812,6 +800,6 @@ struct AboutView: View {
 
             Spacer().frame(height: 20)
         }
-        .frame(width: 340, height: 480)
+        .frame(width: 340, height: 420)
     }
 }

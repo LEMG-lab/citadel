@@ -33,6 +33,7 @@ let package = Package(
             name: "Citadel",
             dependencies: ["CitadelCore"],
             path: "App",
+            resources: [.process("Resources")],
             linkerSettings: rustLinkerSettings
         ),
         // Tests
