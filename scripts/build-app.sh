@@ -28,6 +28,9 @@ cp "$ROOT/CitadelApp/.build/arm64-apple-macosx/release/Citadel" "$APP/Contents/M
 # Copy Info.plist
 cp "$ROOT/CitadelApp/Info.plist" "$APP/Contents/"
 
+# Copy app icon
+cp "$ROOT/AppIcon.icns" "$APP/Contents/Resources/AppIcon.icns"
+
 # Embed provisioning profile
 cp "$ROOT/embedded.provisionprofile" "$APP/Contents/embedded.provisionprofile"
 

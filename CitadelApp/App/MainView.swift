@@ -750,27 +750,23 @@ struct AboutView: View {
         VStack(spacing: 0) {
             Spacer().frame(height: 30)
 
-            Image(systemName: "lock.shield.fill")
-                .font(.system(size: 48))
-                .foregroundStyle(.linearGradient(
-                    colors: [.citadelAccent, .blue],
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                ))
+            DragonIcon(size: 96)
 
             Spacer().frame(height: 16)
 
             Text("Smaug")
-                .font(.system(size: 28, weight: .semibold))
+                .font(.system(size: 28, weight: .bold))
 
-            Text("Personal Security Vault")
+            Text("Personal Vault")
                 .font(.system(size: 13))
                 .foregroundStyle(.secondary)
 
-            Text("v1.5")
-                .font(.system(size: 12, design: .monospaced))
-                .foregroundStyle(.tertiary)
-                .padding(.top, 2)
+            if let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String {
+                Text("v\(version)")
+                    .font(.system(size: 12, design: .monospaced))
+                    .foregroundStyle(.tertiary)
+                    .padding(.top, 2)
+            }
 
             Spacer().frame(height: 20)
 
@@ -784,21 +780,15 @@ struct AboutView: View {
 
             Spacer().frame(height: 16)
 
-            VStack(spacing: 4) {
-                Text("Built with Rust + SwiftUI")
-                    .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
-                Text("Encryption: ChaCha20-256 + Argon2id (up to 1GB)")
-                    .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
-                Text("Format: KDBX 4.x (KeePass compatible)")
-                    .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
-            }
+            Text("Rust + SwiftUI \u{00B7} ChaCha20-256 \u{00B7} Argon2id (up to 1GB) \u{00B7} Secure Enclave Touch ID")
+                .font(.system(size: 10))
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+                .frame(width: 300)
 
             Spacer().frame(height: 16)
 
-            Link("github.com/LEMG-lab/smaug", destination: URL(string: "https://github.com/LEMG-lab/smaug")!)
+            Link("github.com/LEMG-lab/citadel", destination: URL(string: "https://github.com/LEMG-lab/citadel")!)
                 .font(.system(size: 11))
                 .foregroundStyle(Color.citadelAccent)
 
@@ -822,6 +812,6 @@ struct AboutView: View {
 
             Spacer().frame(height: 20)
         }
-        .frame(width: 340, height: 440)
+        .frame(width: 340, height: 480)
     }
 }

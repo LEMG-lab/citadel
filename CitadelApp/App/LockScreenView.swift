@@ -39,10 +39,8 @@ struct LockScreenView: View {
             VStack(spacing: 0) {
                 Spacer()
 
-                // Shield icon
-                Image(systemName: "shield.lock.fill")
-                    .font(.system(size: 60, weight: .light))
-                    .foregroundStyle(Color.citadelAccent)
+                // Dragon sigil
+                DragonIcon(size: 64)
                     .padding(.bottom, 14)
 
                 // App name
