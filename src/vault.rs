@@ -433,6 +433,18 @@ impl VaultState {
         Ok(())
     }
 
+    /// Delete a group and all entries inside it (recursively).
+    /// Returns the number of entries that were removed.
+    pub fn delete_group(&mut self, group_path: &str) -> Result<u32, VaultResult> {
+        if group_path.is_empty() {
+            return Err(VaultResult::InternalError); // cannot delete root
+        }
+        let parts: Vec<&str> = group_path.split('/').collect();
+        let count = remove_group_by_path(&mut self.db.root, &parts)
+            .ok_or(VaultResult::InternalError)?;
+        Ok(count)
+    }
+
     /// Set or clear the favorite flag on an entry.
     pub fn set_favorite(&mut self, uuid: uuid::Uuid, favorite: bool) -> Result<(), VaultResult> {
         let entry = self.db.root.entry_by_uuid_mut(uuid)
@@ -972,6 +984,33 @@ fn remove_entry_from_group(group: &mut Group, uuid: uuid::Uuid) -> Option<Entry>
         }
     }
     None
+}
+
+/// Remove a group by slash-separated path, returning the total number of entries deleted.
+fn remove_group_by_path(parent: &mut Group, path_parts: &[&str]) -> Option<u32> {
+    if path_parts.is_empty() {
+        return None;
+    }
+    let target_name = path_parts[0];
+    if path_parts.len() == 1 {
+        // Find and remove the direct child group
+        let pos = parent.groups.iter().position(|g| g.name == target_name)?;
+        let removed = parent.groups.remove(pos);
+        Some(count_entries_recursive(&removed))
+    } else {
+        // Recurse into the matching child
+        let child = parent.groups.iter_mut().find(|g| g.name == target_name)?;
+        remove_group_by_path(child, &path_parts[1..])
+    }
+}
+
+/// Count all entries recursively inside a group (including sub-groups).
+fn count_entries_recursive(group: &Group) -> u32 {
+    let mut count = group.entries.len() as u32;
+    for child in &group.groups {
+        count += count_entries_recursive(child);
+    }
+    count
 }
 
 /// Collect group paths recursively (excluding root name and Recycle Bin).

@@ -542,6 +542,20 @@ public final class VaultEngine: @unchecked Sendable {
         try check(result)
     }
 
+    /// Delete a group and all entries inside it. Returns the number of deleted entries.
+    @discardableResult
+    public func deleteGroup(path: String) throws -> UInt32 {
+        lock.lock()
+        defer { lock.unlock() }
+        let h = try _requireHandle()
+        var count: UInt32 = 0
+        let result = path.withCString { cPath in
+            vault_delete_group(h, cPath, &count)
+        }
+        try check(result)
+        return count
+    }
+
     // MARK: - Attachments
 
     /// List attachments on an entry. Returns (name, sizeBytes) pairs.

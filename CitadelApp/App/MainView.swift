@@ -64,6 +64,9 @@ struct MainView: View {
     @State private var pendingRestorePassword: String?
     @State private var showingNewProject = false
     @State private var newProjectName = ""
+    @State private var projectDeleteMode = false
+    @State private var selectedProjectsForDeletion: Set<String> = []
+    @State private var showingDeleteProjectsAlert = false
 
     // MARK: - Filtered entries
 
@@ -159,105 +162,24 @@ struct MainView: View {
             )
             .navigationSplitViewColumnWidth(min: 240, ideal: 300, max: 420)
         } detail: {
-            if sidebarSelection == .trash, let id = appState.selectedEntryID {
-                TrashDetailView(entryID: id)
-            } else if let id = appState.selectedEntryID {
-                EntryDetailView(entryID: id)
-            } else {
-                VStack(spacing: 12) {
-                    Image(systemName: "doc.text")
-                        .font(.system(size: 36, weight: .light))
-                        .foregroundStyle(Color.citadelSecondary.opacity(0.4))
-                    Text("No Entry Selected")
-                        .font(.system(size: 15, weight: .semibold))
-                        .foregroundStyle(Color.citadelSecondary)
-                    Text("Select an entry to view its details")
-                        .font(.system(size: 12))
-                        .foregroundStyle(Color.citadelSecondary.opacity(0.7))
-                }
-            }
+            detailContent
         }
         .toolbar {
             ToolbarItemGroup(placement: .primaryAction) {
-                Menu {
-                    ForEach(appState.knownVaults) { vault in
-                        Button {
-                            appState.switchVault(to: vault)
-                        } label: {
-                            HStack {
-                                Text(vault.name)
-                                if vault.path == appState.vaultPath {
-                                    Image(systemName: "checkmark")
-                                }
-                            }
-                        }
-                    }
-                } label: {
-                    HStack(spacing: 4) {
-                        Image(systemName: "externaldrive")
-                        Text(appState.activeVaultName)
-                            .font(.system(size: 12))
-                    }
-                }
-                .help("Switch vault")
-
-                Button {
-                    showingAddEntry = true
-                } label: {
-                    Image(systemName: "plus")
-                }
-                .help("New entry")
-
-                Menu {
-                    Button("Export CSV\u{2026}") { showingCSVExportWarning = true }
-                    Button("Import CSV\u{2026}") { importCSV() }
-                    Divider()
-                    Button("Receive Shared Entry\u{2026}") { showingReceiveShare = true }
-                    Divider()
-                    Button("Backup Vault\u{2026}") { performBackup() }
-                    Button("Full Vault Backup\u{2026}") { showingFullBackup = true }
-                    Button("Verify Backup\u{2026}") { verifyBackup() }
-                    Button("Restore from Backup\u{2026}") { restoreBackup() }
-                    Divider()
-                    Button("About Smaug") { showingAbout = true }
-                } label: {
-                    Image(systemName: "ellipsis.circle")
-                }
-                .help("More actions")
-
-                Button {
-                    showingSettings = true
-                } label: {
-                    Image(systemName: "gearshape")
-                }
-                .help("Settings")
+                toolbarButtons
             }
         }
         // MARK: Sheets
-        .sheet(isPresented: $showingAddEntry) {
-            EntryEditView(mode: .add)
-        }
-        .sheet(isPresented: $showingSettings) {
-            SettingsView()
-        }
-        .sheet(isPresented: $showingReceiveShare) {
-            ReceiveShareView()
-        }
-        .sheet(isPresented: $showingFullBackup) {
-            FullBackupSheet()
-        }
-        .sheet(isPresented: $showingPasswordHealth) {
-            PasswordHealthView()
-        }
-        .sheet(isPresented: $showingAuditLog) {
-            AuditLogView()
-        }
-        .sheet(isPresented: $showingGenerator) {
-            PasswordGeneratorView { _ in }
-        }
-        .sheet(isPresented: $showingAbout) {
-            AboutView()
-        }
+        .sheet(isPresented: $showingAddEntry) { EntryEditView(mode: .add) }
+        .sheet(isPresented: $showingSettings) { SettingsView() }
+        .sheet(isPresented: $showingReceiveShare) { ReceiveShareView() }
+        .sheet(isPresented: $showingFullBackup) { FullBackupSheet() }
+        .sheet(isPresented: $showingPasswordHealth) { PasswordHealthView() }
+        .sheet(isPresented: $showingAuditLog) { AuditLogView() }
+        .sheet(isPresented: $showingGenerator) { PasswordGeneratorView { _ in } }
+        .sheet(isPresented: $showingAbout) { AboutView() }
+        .sheet(isPresented: $showingReAuthForCSV) { reAuthSheet }
+        // MARK: Alerts
         .alert("New Project", isPresented: $showingNewProject) {
             TextField("Project name", text: $newProjectName)
             Button("Create") { createProject() }
@@ -265,117 +187,130 @@ struct MainView: View {
         } message: {
             Text("Enter a name for the new project. This creates a top-level group in your vault.")
         }
-        // MARK: Alerts
-        .alert("Backup", isPresented: $showingBackupResult) {
-            Button("OK") {}
-        } message: {
-            Text(backupResultMessage ?? "")
-        }
-        .alert("CSV Import", isPresented: $showingImportResult) {
-            Button("OK") {}
-        } message: {
-            Text(importResultMessage ?? "")
-        }
-        .alert("Expired Passwords", isPresented: $showingExpiredAlert) {
-            Button("OK") {}
-        } message: {
-            Text(appState.expiredEntriesMessage ?? "")
-        }
-        .confirmationDialog("Export Passwords", isPresented: $showingCSVExportWarning, titleVisibility: .visible) {
-            Button("Export Anyway", role: .destructive) {
-                reAuthPassword = ""
-                reAuthError = nil
-                showingReAuthForCSV = true
-            }
+        .alert("Delete Projects", isPresented: $showingDeleteProjectsAlert) {
+            Button("Delete", role: .destructive) { deleteSelectedProjects() }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("WARNING: This will export ALL your passwords in plaintext. The file will NOT be encrypted. Do not save to cloud-synced folders.")
+            Text(deleteProjectsAlertMessage)
         }
-        .sheet(isPresented: $showingReAuthForCSV) {
-            VStack(spacing: 16) {
-                Text("Re-enter Master Password")
-                    .font(.headline)
-                Text("Confirm your identity before exporting passwords.")
-                    .font(.system(size: 12))
-                    .foregroundStyle(.secondary)
-                SecureField("Master Password", text: $reAuthPassword)
-                    .textFieldStyle(.roundedBorder)
-                    .frame(width: 260)
-                    .onSubmit {
-                        if appState.verifyPassword(Data(reAuthPassword.utf8)) {
-                            reAuthPassword = ""
-                            reAuthError = nil
-                            showingReAuthForCSV = false
-                            exportCSV()
-                        } else {
-                            reAuthError = "Wrong password."
-                        }
-                    }
-                if let err = reAuthError {
-                    Text(err).foregroundStyle(.red).font(.system(size: 12))
-                }
-                HStack {
-                    Button("Cancel") {
-                        reAuthPassword = ""
-                        showingReAuthForCSV = false
-                    }
-                    Button("Confirm") {
-                        if appState.verifyPassword(Data(reAuthPassword.utf8)) {
-                            reAuthPassword = ""
-                            reAuthError = nil
-                            showingReAuthForCSV = false
-                            exportCSV()
-                        } else {
-                            reAuthError = "Wrong password."
-                        }
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .tint(.citadelAccent)
-                }
-            }
-            .padding(24)
-            .frame(width: 340)
-        }
+        .alert("Backup", isPresented: $showingBackupResult) { Button("OK") {} } message: { Text(backupResultMessage ?? "") }
+        .alert("CSV Import", isPresented: $showingImportResult) { Button("OK") {} } message: { Text(importResultMessage ?? "") }
+        .alert("Expired Passwords", isPresented: $showingExpiredAlert) { Button("OK") {} } message: { Text(appState.expiredEntriesMessage ?? "") }
+        .confirmationDialog("Export Passwords", isPresented: $showingCSVExportWarning, titleVisibility: .visible) {
+            Button("Export Anyway", role: .destructive) { reAuthPassword = ""; reAuthError = nil; showingReAuthForCSV = true }
+            Button("Cancel", role: .cancel) {}
+        } message: { Text("WARNING: This will export ALL your passwords in plaintext. The file will NOT be encrypted. Do not save to cloud-synced folders.") }
         .confirmationDialog("Replace Existing Vaults?", isPresented: $showingRestoreOverwriteWarning, titleVisibility: .visible) {
             Button("Replace", role: .destructive) {
-                if let url = pendingRestoreURL, let pw = pendingRestorePassword {
-                    doRestore(from: url, password: pw)
-                }
-                pendingRestoreURL = nil
-                pendingRestorePassword = nil
+                if let url = pendingRestoreURL, let pw = pendingRestorePassword { doRestore(from: url, password: pw) }
+                pendingRestoreURL = nil; pendingRestorePassword = nil
             }
-            Button("Cancel", role: .cancel) {
-                pendingRestoreURL = nil
-                pendingRestorePassword = nil
-            }
-        } message: {
-            Text("This will replace your current vault(s). Recent changes not backed up will be lost. Continue?")
-        }
+            Button("Cancel", role: .cancel) { pendingRestoreURL = nil; pendingRestorePassword = nil }
+        } message: { Text("This will replace your current vault(s). Recent changes not backed up will be lost. Continue?") }
         .task {
             try? await Task.sleep(for: .milliseconds(500))
-            if appState.expiredEntriesMessage != nil {
-                showingExpiredAlert = true
+            if appState.expiredEntriesMessage != nil { showingExpiredAlert = true }
+        }
+        .onChange(of: appState.expiredEntriesMessage) { _, newValue in if newValue != nil { showingExpiredAlert = true } }
+        .onReceive(NotificationCenter.default.publisher(for: .citadelNewEntry)) { _ in showingAddEntry = true }
+        .onReceive(NotificationCenter.default.publisher(for: .citadelShowSettings)) { _ in showingSettings = true }
+        .onReceive(NotificationCenter.default.publisher(for: .citadelCopyPassword)) { _ in copySelectedPassword() }
+        .onReceive(NotificationCenter.default.publisher(for: .citadelCopyUsername)) { _ in copySelectedUsername() }
+        .onReceive(NotificationCenter.default.publisher(for: .citadelShowAbout)) { _ in showingAbout = true }
+    }
+
+    @ViewBuilder
+    private var detailContent: some View {
+        if sidebarSelection == .trash, let id = appState.selectedEntryID {
+            TrashDetailView(entryID: id)
+        } else if let id = appState.selectedEntryID {
+            EntryDetailView(entryID: id)
+        } else {
+            VStack(spacing: 12) {
+                Image(systemName: "doc.text")
+                    .font(.system(size: 36, weight: .light))
+                    .foregroundStyle(Color.citadelSecondary.opacity(0.4))
+                Text("No Entry Selected")
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(Color.citadelSecondary)
+                Text("Select an entry to view its details")
+                    .font(.system(size: 12))
+                    .foregroundStyle(Color.citadelSecondary.opacity(0.7))
             }
         }
-        .onChange(of: appState.expiredEntriesMessage) { _, newValue in
-            if newValue != nil { showingExpiredAlert = true }
+    }
+
+    @ViewBuilder
+    private var toolbarButtons: some View {
+        Menu {
+            ForEach(appState.knownVaults) { vault in
+                Button {
+                    appState.switchVault(to: vault)
+                } label: {
+                    HStack {
+                        Text(vault.name)
+                        if vault.path == appState.vaultPath { Image(systemName: "checkmark") }
+                    }
+                }
+            }
+        } label: {
+            HStack(spacing: 4) {
+                Image(systemName: "externaldrive")
+                Text(appState.activeVaultName).font(.system(size: 12))
+            }
         }
-        // MARK: Notification listeners
-        .onReceive(NotificationCenter.default.publisher(for: .citadelNewEntry)) { _ in
-            showingAddEntry = true
+        .help("Switch vault")
+
+        Button { showingAddEntry = true } label: { Image(systemName: "plus") }.help("New entry")
+
+        Menu {
+            Button("Export CSV\u{2026}") { showingCSVExportWarning = true }
+            Button("Import CSV\u{2026}") { importCSV() }
+            Divider()
+            Button("Receive Shared Entry\u{2026}") { showingReceiveShare = true }
+            Divider()
+            Button("Backup Vault\u{2026}") { performBackup() }
+            Button("Full Vault Backup\u{2026}") { showingFullBackup = true }
+            Button("Verify Backup\u{2026}") { verifyBackup() }
+            Button("Restore from Backup\u{2026}") { restoreBackup() }
+            Divider()
+            Button("About Smaug") { showingAbout = true }
+        } label: {
+            Image(systemName: "ellipsis.circle")
         }
-        .onReceive(NotificationCenter.default.publisher(for: .citadelShowSettings)) { _ in
-            showingSettings = true
+        .help("More actions")
+
+        Button { showingSettings = true } label: { Image(systemName: "gearshape") }.help("Settings")
+    }
+
+    @ViewBuilder
+    private var reAuthSheet: some View {
+        VStack(spacing: 16) {
+            Text("Re-enter Master Password").font(.headline)
+            Text("Confirm your identity before exporting passwords.")
+                .font(.system(size: 12)).foregroundStyle(.secondary)
+            SecureField("Master Password", text: $reAuthPassword)
+                .textFieldStyle(.roundedBorder)
+                .frame(width: 260)
+                .onSubmit {
+                    if appState.verifyPassword(Data(reAuthPassword.utf8)) {
+                        reAuthPassword = ""; reAuthError = nil; showingReAuthForCSV = false; exportCSV()
+                    } else { reAuthError = "Wrong password." }
+                }
+            if let err = reAuthError {
+                Text(err).foregroundStyle(.red).font(.system(size: 12))
+            }
+            HStack {
+                Button("Cancel") { reAuthPassword = ""; showingReAuthForCSV = false }
+                Button("Confirm") {
+                    if appState.verifyPassword(Data(reAuthPassword.utf8)) {
+                        reAuthPassword = ""; reAuthError = nil; showingReAuthForCSV = false; exportCSV()
+                    } else { reAuthError = "Wrong password." }
+                }
+                .buttonStyle(.borderedProminent).tint(.citadelAccent)
+            }
         }
-        .onReceive(NotificationCenter.default.publisher(for: .citadelCopyPassword)) { _ in
-            copySelectedPassword()
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .citadelCopyUsername)) { _ in
-            copySelectedUsername()
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .citadelShowAbout)) { _ in
-            showingAbout = true
-        }
+        .padding(24).frame(width: 340)
     }
 
     // MARK: - Sidebar
@@ -409,50 +344,10 @@ struct MainView: View {
             sidebarRow("Favorites", icon: "star.fill", color: .yellow, item: .favorites, count: appState.entries.filter(\.isFavorite).count)
 
             // Projects
-            Section {
-                if projects.isEmpty {
-                    Text("Click + to create a project")
-                        .font(.system(size: 11))
-                        .foregroundStyle(.secondary)
-                        .listRowSeparator(.hidden)
-                } else {
-                    ForEach(projects, id: \.self) { project in
-                        let count = appState.entries.filter { $0.group == project || $0.group.hasPrefix(project + "/") }.count
-                        sidebarRow(project, icon: "folder.fill", color: .indigo, item: .project(project), count: count)
-                    }
-                }
-            } header: {
-                HStack {
-                    Text("PROJECTS")
-                    Spacer()
-                    Button {
-                        newProjectName = ""
-                        showingNewProject = true
-                    } label: {
-                        Image(systemName: "plus")
-                            .font(.system(size: 11, weight: .semibold))
-                            .foregroundStyle(Color.citadelAccent)
-                    }
-                    .buttonStyle(.plain)
-                }
-            }
+            projectsSection
 
             // Categories
-            Section("Categories") {
-                sidebarRow("All Items", icon: "square.grid.2x2", color: .citadelAccent, item: .allItems, count: appState.entries.count)
-                sidebarRow("Logins", icon: "key.fill", color: .blue, item: .logins, count: appState.entries.filter { $0.entryType == "password" || $0.entryType.isEmpty }.count)
-                sidebarRow("Crypto Wallets", icon: "bitcoinsign.circle", color: .orange, item: .cryptoWallets, count: appState.entries.filter { EntryTemplate.cryptoTypes.contains($0.entryType) }.count)
-                sidebarRow("Wallet (Multi-Chain)", icon: "link.circle", color: .orange, item: .multiChainWallets, count: appState.entries.filter { $0.entryType == "multi_chain_wallet" }.count)
-                sidebarRow("Server / SSH", icon: "server.rack", color: .cyan, item: .serverSSH, count: appState.entries.filter { $0.entryType == "server_ssh" }.count)
-                sidebarRow("API Keys", icon: "curlybraces", color: .red, item: .apiKeys, count: appState.entries.filter { $0.entryType == "api_key" }.count)
-                sidebarRow("Databases", icon: "cylinder", color: .blue, item: .databases, count: appState.entries.filter { $0.entryType == "database" }.count)
-                sidebarRow("Email Accounts", icon: "envelope.fill", color: .blue, item: .emailAccounts, count: appState.entries.filter { $0.entryType == "email_account" }.count)
-                sidebarRow("Credit Cards", icon: "creditcard.fill", color: .green, item: .creditCards, count: appState.entries.filter { $0.entryType == "credit_card" }.count)
-                sidebarRow("Identities", icon: "person.text.rectangle", color: .orange, item: .identities, count: appState.entries.filter { $0.entryType == "identity" }.count)
-                sidebarRow("Secure Notes", icon: "note.text", color: .purple, item: .secureNotes, count: appState.entries.filter { $0.entryType == "secure_note" }.count)
-                sidebarRow("Recovery Codes", icon: "key.viewfinder", color: .pink, item: .recoveryCodes, count: appState.entries.filter { $0.entryType == "recovery_codes" }.count)
-                sidebarRow("Software Licenses", icon: "purchased", color: .teal, item: .softwareLicenses, count: appState.entries.filter { $0.entryType == "software_license" }.count)
-            }
+            categoriesSection
 
             // Folders
             if !folders.isEmpty {
@@ -499,6 +394,132 @@ struct MainView: View {
     }
 
     @ViewBuilder
+    private var categoriesSection: some View {
+        Section("Categories") {
+            sidebarRow("All Items", icon: "square.grid.2x2", color: .citadelAccent, item: .allItems, count: appState.entries.count)
+            sidebarRow("Logins", icon: "key.fill", color: .blue, item: .logins, count: appState.entries.filter { $0.entryType == "password" || $0.entryType.isEmpty }.count)
+            sidebarRow("Crypto Wallets", icon: "bitcoinsign.circle", color: .orange, item: .cryptoWallets, count: appState.entries.filter { EntryTemplate.cryptoTypes.contains($0.entryType) }.count)
+            sidebarRow("Wallet (Multi-Chain)", icon: "link.circle", color: .orange, item: .multiChainWallets, count: appState.entries.filter { $0.entryType == "multi_chain_wallet" }.count)
+            sidebarRow("Server / SSH", icon: "server.rack", color: .cyan, item: .serverSSH, count: appState.entries.filter { $0.entryType == "server_ssh" }.count)
+            sidebarRow("API Keys", icon: "curlybraces", color: .red, item: .apiKeys, count: appState.entries.filter { $0.entryType == "api_key" }.count)
+            sidebarRow("Databases", icon: "cylinder", color: .blue, item: .databases, count: appState.entries.filter { $0.entryType == "database" }.count)
+            sidebarRow("Email Accounts", icon: "envelope.fill", color: .blue, item: .emailAccounts, count: appState.entries.filter { $0.entryType == "email_account" }.count)
+            sidebarRow("Credit Cards", icon: "creditcard.fill", color: .green, item: .creditCards, count: appState.entries.filter { $0.entryType == "credit_card" }.count)
+            sidebarRow("Identities", icon: "person.text.rectangle", color: .orange, item: .identities, count: appState.entries.filter { $0.entryType == "identity" }.count)
+            sidebarRow("Secure Notes", icon: "note.text", color: .purple, item: .secureNotes, count: appState.entries.filter { $0.entryType == "secure_note" }.count)
+            sidebarRow("Recovery Codes", icon: "key.viewfinder", color: .pink, item: .recoveryCodes, count: appState.entries.filter { $0.entryType == "recovery_codes" }.count)
+            sidebarRow("Software Licenses", icon: "purchased", color: .teal, item: .softwareLicenses, count: appState.entries.filter { $0.entryType == "software_license" }.count)
+        }
+    }
+
+    @ViewBuilder
+    private var projectsSection: some View {
+        Section {
+            if projects.isEmpty && !projectDeleteMode {
+                Text("Click + to create a project")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+                    .listRowSeparator(.hidden)
+            } else {
+                ForEach(projects, id: \.self) { project in
+                    let count = appState.entries.filter { $0.group == project || $0.group.hasPrefix(project + "/") }.count
+                    if projectDeleteMode {
+                        projectDeleteRow(project: project, count: count)
+                    } else {
+                        sidebarRow(project, icon: "folder.fill", color: .indigo, item: .project(project), count: count)
+                    }
+                }
+                if projectDeleteMode {
+                    projectDeleteActions
+                }
+            }
+        } header: {
+            projectsSectionHeader
+        }
+    }
+
+    @ViewBuilder
+    private func projectDeleteRow(project: String, count: Int) -> some View {
+        let isSelected = selectedProjectsForDeletion.contains(project)
+        HStack(spacing: 6) {
+            Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
+                .foregroundStyle(isSelected ? Color.red : Color.secondary)
+                .font(.system(size: 14))
+            Image(systemName: "folder.fill")
+                .foregroundStyle(.indigo)
+                .frame(width: 18)
+            Text(project)
+            Spacer()
+            Text("\(count)")
+                .font(.system(size: 11))
+                .foregroundStyle(.secondary)
+        }
+        .contentShape(Rectangle())
+        .onTapGesture {
+            if isSelected {
+                selectedProjectsForDeletion.remove(project)
+            } else {
+                selectedProjectsForDeletion.insert(project)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var projectDeleteActions: some View {
+        HStack(spacing: 8) {
+            Button("Cancel") {
+                projectDeleteMode = false
+                selectedProjectsForDeletion.removeAll()
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(.secondary)
+            .font(.system(size: 12))
+            Spacer()
+            Button("Delete Selected") {
+                showingDeleteProjectsAlert = true
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(.red)
+            .font(.system(size: 12, weight: .semibold))
+            .disabled(selectedProjectsForDeletion.isEmpty)
+        }
+        .padding(.vertical, 4)
+        .listRowSeparator(.hidden)
+    }
+
+    @ViewBuilder
+    private var projectsSectionHeader: some View {
+        HStack {
+            Text("PROJECTS")
+            Spacer()
+            if !projects.isEmpty {
+                Button {
+                    if projectDeleteMode {
+                        projectDeleteMode = false
+                        selectedProjectsForDeletion.removeAll()
+                    } else {
+                        projectDeleteMode = true
+                        selectedProjectsForDeletion.removeAll()
+                    }
+                } label: {
+                    Image(systemName: projectDeleteMode ? "xmark.circle" : "trash")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(projectDeleteMode ? Color.secondary : Color.red)
+                }
+                .buttonStyle(.plain)
+            }
+            Button {
+                newProjectName = ""
+                showingNewProject = true
+            } label: {
+                Image(systemName: "plus")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(Color.citadelAccent)
+            }
+            .buttonStyle(.plain)
+        }
+    }
+
     private func sidebarRow(_ title: String, icon: String, color: Color, item: SidebarItem, count: Int) -> some View {
         Label {
             HStack {
@@ -531,7 +552,37 @@ struct MainView: View {
         .foregroundStyle(.primary)
     }
 
+    private var deleteProjectsAlertMessage: String {
+        let projectCount = selectedProjectsForDeletion.count
+        let entryCount = selectedProjectsForDeletion.reduce(0) { total, project in
+            total + appState.entries.filter { $0.group == project || $0.group.hasPrefix(project + "/") }.count
+        }
+        if entryCount > 0 {
+            return "Delete \(projectCount) project\(projectCount == 1 ? "" : "s")? This will permanently delete \(entryCount) entr\(entryCount == 1 ? "y" : "ies"). This cannot be undone."
+        } else {
+            return "Delete \(projectCount) empty project\(projectCount == 1 ? "" : "s")? This cannot be undone."
+        }
+    }
+
     // MARK: - Actions
+
+    private func deleteSelectedProjects() {
+        do {
+            for project in selectedProjectsForDeletion {
+                try appState.engine.deleteGroup(path: project)
+            }
+            try appState.save()
+            try appState.refreshEntries()
+            // If current selection was a deleted project, reset to All Items
+            if case .project(let p) = sidebarSelection, selectedProjectsForDeletion.contains(p) {
+                sidebarSelection = .allItems
+            }
+        } catch {
+            // best-effort
+        }
+        projectDeleteMode = false
+        selectedProjectsForDeletion.removeAll()
+    }
 
     private func createProject() {
         let name = newProjectName.trimmingCharacters(in: .whitespaces)

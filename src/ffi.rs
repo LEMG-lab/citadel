@@ -622,6 +622,36 @@ pub extern "C" fn vault_create_group(
     }
 }
 
+/// Delete a group and all its entries. Returns the number of deleted entries
+/// via `out_count` (may be null if the caller doesn't need it).
+#[no_mangle]
+pub extern "C" fn vault_delete_group(
+    handle: *mut c_void,
+    path: *const c_char,
+    out_count: *mut u32,
+) -> VaultResult {
+    if handle.is_null() || path.is_null() {
+        return VaultResult::InternalError;
+    }
+    let result = catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let state = unsafe { &mut *(handle as *mut VaultState) };
+        let path_str = unsafe { std::ffi::CStr::from_ptr(path) }
+            .to_str()
+            .map_err(|_| VaultResult::InternalError)?;
+        state.delete_group(path_str)
+    }));
+    match result {
+        Ok(Ok(count)) => {
+            if !out_count.is_null() {
+                unsafe { *out_count = count; }
+            }
+            VaultResult::Ok
+        }
+        Ok(Err(e)) => e,
+        Err(_) => VaultResult::InternalError,
+    }
+}
+
 /// Free a group list returned by `vault_list_groups`.
 #[no_mangle]
 pub extern "C" fn group_list_free(groups: *mut *mut c_char, count: u32) {

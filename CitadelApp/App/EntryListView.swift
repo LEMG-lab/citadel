@@ -21,6 +21,9 @@ struct EntryListView: View {
     @State private var sortOrder: SortOrder = .name
     @State private var showingDeleteConfirmation = false
     @State private var entryToDelete: String?
+    @State private var bulkDeleteMode = false
+    @State private var selectedForDeletion: Set<String> = []
+    @State private var showingBulkDeleteConfirmation = false
 
     // MARK: - Filtered & sorted entries
 
@@ -79,6 +82,23 @@ struct EntryListView: View {
                     }
                     .buttonStyle(.plain)
                 }
+                if !entries.isEmpty {
+                    Button {
+                        if bulkDeleteMode {
+                            bulkDeleteMode = false
+                            selectedForDeletion.removeAll()
+                        } else {
+                            bulkDeleteMode = true
+                            selectedForDeletion.removeAll()
+                        }
+                    } label: {
+                        Image(systemName: bulkDeleteMode ? "xmark.circle" : "trash")
+                            .font(.system(size: 12))
+                            .foregroundColor(bulkDeleteMode ? Color(nsColor: .secondaryLabelColor) : .red)
+                    }
+                    .buttonStyle(.plain)
+                    .help(bulkDeleteMode ? "Cancel bulk delete" : "Bulk delete entries")
+                }
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
@@ -116,17 +136,36 @@ struct EntryListView: View {
                     ScrollView {
                         LazyVStack(spacing: 0) {
                             ForEach(displayEntries) { entry in
-                                entryRow(entry)
+                                HStack(spacing: 0) {
+                                    if bulkDeleteMode {
+                                        Image(systemName: selectedForDeletion.contains(entry.id) ? "checkmark.circle.fill" : "circle")
+                                            .foregroundStyle(selectedForDeletion.contains(entry.id) ? Color.red : Color(nsColor: .secondaryLabelColor))
+                                            .font(.system(size: 16))
+                                            .frame(width: 28)
+                                            .padding(.leading, 4)
+                                    }
+                                    entryRow(entry)
+                                }
                                     .id(entry.id)
                                     .background(rowBackground(for: entry.id))
                                     .contentShape(Rectangle())
                                     .onTapGesture {
-                                        selectedEntryID = entry.id
+                                        if bulkDeleteMode {
+                                            if selectedForDeletion.contains(entry.id) {
+                                                selectedForDeletion.remove(entry.id)
+                                            } else {
+                                                selectedForDeletion.insert(entry.id)
+                                            }
+                                        } else {
+                                            selectedEntryID = entry.id
+                                        }
                                     }
                                     .contextMenu {
-                                        Button("Delete") {
-                                            entryToDelete = entry.id
-                                            showingDeleteConfirmation = true
+                                        if !bulkDeleteMode {
+                                            Button("Delete") {
+                                                entryToDelete = entry.id
+                                                showingDeleteConfirmation = true
+                                            }
                                         }
                                     }
                             }
@@ -145,40 +184,68 @@ struct EntryListView: View {
 
             Divider()
 
-            // Footer: item count and sort picker
-            HStack(spacing: 8) {
-                Text("\(displayEntries.count) item\(displayEntries.count == 1 ? "" : "s")")
-                    .font(.system(size: 11))
-                    .foregroundColor(Color(nsColor: .secondaryLabelColor))
+            // Footer
+            if bulkDeleteMode {
+                HStack(spacing: 8) {
+                    Button(selectedForDeletion.count == displayEntries.count ? "Deselect All" : "Select All") {
+                        if selectedForDeletion.count == displayEntries.count {
+                            selectedForDeletion.removeAll()
+                        } else {
+                            selectedForDeletion = Set(displayEntries.map(\.id))
+                        }
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(Color(nsColor: .secondaryLabelColor))
+                    .font(.system(size: 12))
+                    Spacer()
+                    Text("\(selectedForDeletion.count) selected")
+                        .font(.system(size: 11))
+                        .foregroundColor(Color(nsColor: .secondaryLabelColor))
+                    Button("Delete Selected") {
+                        showingBulkDeleteConfirmation = true
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(.red)
+                    .font(.system(size: 12, weight: .semibold))
+                    .disabled(selectedForDeletion.isEmpty)
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 6)
+            } else {
+                HStack(spacing: 8) {
+                    Text("\(displayEntries.count) item\(displayEntries.count == 1 ? "" : "s")")
+                        .font(.system(size: 11))
+                        .foregroundColor(Color(nsColor: .secondaryLabelColor))
 
-                Spacer()
+                    Spacer()
 
-                Menu {
-                    ForEach(SortOrder.allCases, id: \.self) { order in
-                        Button {
-                            sortOrder = order
-                        } label: {
-                            HStack {
-                                Text(order.rawValue)
-                                if sortOrder == order {
-                                    Image(systemName: "checkmark")
+                    Menu {
+                        ForEach(SortOrder.allCases, id: \.self) { order in
+                            Button {
+                                sortOrder = order
+                            } label: {
+                                HStack {
+                                    Text(order.rawValue)
+                                    if sortOrder == order {
+                                        Image(systemName: "checkmark")
+                                    }
                                 }
                             }
                         }
+                    } label: {
+                        HStack(spacing: 3) {
+                            Image(systemName: "arrow.up.arrow.down")
+                                .font(.system(size: 10))
+                            Text(sortOrder.rawValue)
+                                .font(.system(size: 11))
+                        }
+                        .foregroundColor(Color(nsColor: .secondaryLabelColor))
                     }
-                } label: {
-                    HStack(spacing: 3) {
-                        Image(systemName: "arrow.up.arrow.down")
-                            .font(.system(size: 10))
-                        Text(sortOrder.rawValue)
-                            .font(.system(size: 11))
-                    }
-                    .foregroundColor(Color(nsColor: .secondaryLabelColor))
+                    .buttonStyle(.plain)
                 }
-                .buttonStyle(.plain)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 6)
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 6)
         }
         .confirmationDialog("Delete Entry", isPresented: $showingDeleteConfirmation, titleVisibility: .visible) {
             Button("Delete", role: .destructive) {
@@ -188,6 +255,14 @@ struct EntryListView: View {
             Button("Cancel", role: .cancel) { entryToDelete = nil }
         } message: {
             Text("This entry will be moved to Trash.")
+        }
+        .confirmationDialog("Delete \(selectedForDeletion.count) Entries", isPresented: $showingBulkDeleteConfirmation, titleVisibility: .visible) {
+            Button("Delete \(selectedForDeletion.count) Entries", role: .destructive) {
+                bulkDeleteEntries()
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Delete \(selectedForDeletion.count) entr\(selectedForDeletion.count == 1 ? "y" : "ies")? They will be moved to Trash.")
         }
     }
 
@@ -299,5 +374,22 @@ struct EntryListView: View {
         } catch {
             // Silently fail
         }
+    }
+
+    private func bulkDeleteEntries() {
+        do {
+            for id in selectedForDeletion {
+                try appState.engine.deleteEntry(uuid: id)
+            }
+            try appState.save()
+            if let sel = selectedEntryID, selectedForDeletion.contains(sel) {
+                selectedEntryID = nil
+            }
+            try appState.refreshEntries()
+        } catch {
+            // best-effort
+        }
+        bulkDeleteMode = false
+        selectedForDeletion.removeAll()
     }
 }

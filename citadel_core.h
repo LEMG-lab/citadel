@@ -271,6 +271,12 @@ enum VaultResult vault_list_groups(void *handle, char ***groups_out, uint32_t *c
 enum VaultResult vault_create_group(void *handle, const char *path);
 
 /**
+ * Delete a group and all its entries. Returns the number of deleted entries
+ * via `out_count` (may be null if the caller doesn't need it).
+ */
+enum VaultResult vault_delete_group(void *handle, const char *path, uint32_t *out_count);
+
+/**
  * Free a group list returned by `vault_list_groups`.
  */
 void group_list_free(char **groups, uint32_t count);
