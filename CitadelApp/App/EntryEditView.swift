@@ -29,6 +29,7 @@ struct EntryEditView: View {
     @State private var notes = ""
     @State private var otpURI = ""
     @State private var group = ""
+    @State private var originalGroup = ""
     @State private var newGroupName = ""
     @State private var hasExpiry = false
     @State private var expiryDate = Date().addingTimeInterval(90 * 24 * 3600)
@@ -62,9 +63,7 @@ struct EntryEditView: View {
         selectedTemplate.usesStandardFields
     }
 
-    private var existingGroups: [String] {
-        (try? appState.engine.listGroups()) ?? []
-    }
+    @State private var existingGroups: [String] = []
 
     private var effectiveGroup: String {
         group == "__new__" ? newGroupName : group
@@ -86,9 +85,7 @@ struct EntryEditView: View {
 
                     coreFieldsSection
 
-                    if !isEditing {
-                        folderSection
-                    }
+                    folderSection
 
                     expirationSection
                     tagsSection
@@ -383,24 +380,43 @@ struct EntryEditView: View {
         .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).stroke(Color.subtleSeparator.opacity(0.3), lineWidth: 0.5))
     }
 
-    // MARK: - Folder
+    // MARK: - Project
 
     @ViewBuilder
+    private var projectLabel: String {
+        if group.isEmpty { return "Root (default)" }
+        if group == "__new__" { return "New project\u{2026}" }
+        return group
+    }
+
     private var folderSection: some View {
         VStack(alignment: .leading, spacing: 8) {
-            SectionHeader(title: "Folder")
+            SectionHeader(title: "Project")
 
-            Picker("Folder", selection: $group) {
-                Text("Root (default)").tag("")
+            Menu {
+                Button("Root (default)") { group = "" }
                 ForEach(existingGroups, id: \.self) { g in
-                    Text(g).tag(g)
+                    Button(g) { group = g }
                 }
-                Text("New folder\u{2026}").tag("__new__")
+                Divider()
+                Button("New project\u{2026}") { group = "__new__" }
+            } label: {
+                HStack {
+                    Text(projectLabel)
+                        .font(.system(size: 13))
+                    Spacer()
+                    Image(systemName: "chevron.up.chevron.down")
+                        .font(.system(size: 10))
+                        .foregroundStyle(.secondary)
+                }
+                .padding(.horizontal, 8)
+                .padding(.vertical, 6)
+                .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 6))
             }
-            .labelsHidden()
+            .menuStyle(.borderlessButton)
 
             if group == "__new__" {
-                styledField("Folder path (e.g. Work/Email)", text: $newGroupName, icon: "folder")
+                styledField("Project name (e.g. Work)", text: $newGroupName, icon: "folder")
             }
         }
     }
@@ -711,6 +727,8 @@ struct EntryEditView: View {
     // MARK: - Data
 
     private func populateFields() {
+        existingGroups = (try? appState.engine.listGroups()) ?? []
+        NSLog("[Smaug] populateFields — existingGroups=%@", existingGroups as NSArray)
         if case .edit(let entry) = mode {
             title = entry.title
             username = entry.username
@@ -729,9 +747,14 @@ struct EntryEditView: View {
                 hasExpiry = true
                 expiryDate = exp
             }
-            // Load tags from entry summary (Citadel_Tags is a standard field, not in customFields)
+            // Load tags and group from entry summary
             if let summary = appState.entries.first(where: { $0.id == entry.uuid }) {
                 tagsText = summary.tags
+                // Strip "Root/" prefix — group paths from the engine start with "Root/"
+                let g = summary.group
+                let stripped = g.hasPrefix("Root/") ? String(g.dropFirst(5)) : (g == "Root" ? "" : g)
+                group = stripped
+                originalGroup = stripped
             }
             customFields = entry.customFields.map {
                 EditableCustomField(key: $0.key, value: $0.value, isProtected: $0.isProtected)
@@ -741,6 +764,7 @@ struct EntryEditView: View {
 
     private func save() {
         errorMessage = nil
+        NSLog("[Smaug] save() called — group='%@' effectiveGroup='%@' existingGroups=%@", group, effectiveGroup, existingGroups as NSArray)
         do {
             let pwData = isSecureNote ? Data() : Data(password.utf8)
             let expiry: Date? = hasExpiry ? expiryDate : nil
@@ -805,6 +829,10 @@ struct EntryEditView: View {
                     try appState.engine.removeCustomField(uuid: entry.uuid, key: "Citadel_Tags")
                 } else {
                     try appState.engine.setCustomField(uuid: entry.uuid, key: "Citadel_Tags", value: editCleanTags, isProtected: false)
+                }
+                // Move entry if project changed
+                if effectiveGroup != originalGroup {
+                    try appState.engine.moveEntry(uuid: entry.uuid, toGroup: effectiveGroup)
                 }
                 try appState.save()
                 try appState.refreshEntries()

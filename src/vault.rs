@@ -250,6 +250,10 @@ impl VaultState {
         let rb_uuid = self.db.meta.recyclebin_uuid.unwrap_or(uuid::Uuid::nil());
         let mut out = Vec::new();
         collect_groups(&self.db.root, "", &mut out, rb_uuid);
+        eprintln!("[Smaug-Rust] list_groups result: {:?}", out);
+        for child in &self.db.root.groups {
+            eprintln!("[Smaug-Rust] root child group name: {:?} (bytes: {:?})", child.name, child.name.as_bytes());
+        }
         out
     }
 
@@ -326,6 +330,7 @@ impl VaultState {
         group_path: &str,
         expiry_time: i64,
     ) -> Result<uuid::Uuid, VaultResult> {
+        eprintln!("[Smaug-Rust] add_entry_full called — group_path='{}'  empty={}", group_path, group_path.is_empty());
         let password_str =
             std::str::from_utf8(password).map_err(|_| VaultResult::InternalError)?;
         let mut entry = Entry::new();
@@ -343,9 +348,11 @@ impl VaultState {
 
         if group_path.is_empty() {
             self.db.root.entries.push(entry);
+            eprintln!("[Smaug-Rust] entry pushed to ROOT");
         } else {
             let target = get_or_create_group(&mut self.db.root, group_path);
             target.entries.push(entry);
+            eprintln!("[Smaug-Rust] entry pushed to group '{}'", group_path);
         }
         Ok(entry_uuid)
     }
@@ -408,6 +415,22 @@ impl VaultState {
             entry.set_unprotected("otp", otp_uri);
         }
         set_entry_expiry(entry, expiry_time);
+        Ok(())
+    }
+
+    /// Move an entry to a different group. If `group_path` is empty, moves to root.
+    pub fn move_entry(&mut self, uuid: uuid::Uuid, group_path: &str) -> Result<(), VaultResult> {
+        eprintln!("[Smaug-Rust] move_entry called — uuid={} group_path='{}'", uuid, group_path);
+        // Remove the entry from wherever it currently lives.
+        let entry = remove_entry_from_group(&mut self.db.root, uuid)
+            .ok_or(VaultResult::InternalError)?;
+        // Insert into the target group.
+        if group_path.is_empty() {
+            self.db.root.entries.push(entry);
+        } else {
+            let target = get_or_create_group(&mut self.db.root, group_path);
+            target.entries.push(entry);
+        }
         Ok(())
     }
 
@@ -933,6 +956,19 @@ fn get_or_create_group<'a>(root: &'a mut Group, path: &str) -> &'a mut Group {
         }
     }
     current
+}
+
+/// Recursively remove an entry by UUID from a group tree. Returns the entry if found.
+fn remove_entry_from_group(group: &mut Group, uuid: uuid::Uuid) -> Option<Entry> {
+    if let Some(pos) = group.entries.iter().position(|e| e.uuid == uuid) {
+        return Some(group.entries.remove(pos));
+    }
+    for child in &mut group.groups {
+        if let Some(entry) = remove_entry_from_group(child, uuid) {
+            return Some(entry);
+        }
+    }
+    None
 }
 
 /// Collect group paths recursively (excluding root name and Recycle Bin).

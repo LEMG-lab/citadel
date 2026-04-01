@@ -255,6 +255,11 @@ enum VaultResult vault_update_entry(void *handle,
 enum VaultResult vault_delete_entry(void *handle, const char *uuid_str);
 
 /**
+ * Move an entry to a different group. Pass null or empty string for root.
+ */
+enum VaultResult vault_move_entry(void *handle, const char *uuid_str, const char *group_path);
+
+/**
  * List all group paths in the vault. Returns a null-terminated array of C strings.
  * Free with `group_list_free`.
  */

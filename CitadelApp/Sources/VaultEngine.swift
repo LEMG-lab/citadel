@@ -363,6 +363,19 @@ public final class VaultEngine: @unchecked Sendable {
         try check(result)
     }
 
+    /// Move an entry to a different group. Pass empty string for root.
+    public func moveEntry(uuid: String, toGroup group: String) throws {
+        lock.lock()
+        defer { lock.unlock() }
+        let h = try _requireHandle()
+        let result = uuid.withCString { cUuid in
+            group.withCString { cGroup in
+                vault_move_entry(h, cUuid, group.isEmpty ? nil : cGroup)
+            }
+        }
+        try check(result)
+    }
+
     /// Permanently remove all entries in the Recycle Bin. Returns the count removed.
     @discardableResult
     public func emptyRecycleBin() throws -> Int {

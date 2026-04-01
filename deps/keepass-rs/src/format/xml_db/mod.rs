@@ -33,6 +33,13 @@ pub fn parse_xml(
     header_attachments: &[crate::db::Attachment],
     inner_decryptor: &mut dyn Cipher,
 ) -> Result<crate::db::Database, ParseXmlError> {
+    // Dump raw XML around group names for debugging
+    if let Ok(xml_str) = std::str::from_utf8(data) {
+        for (i, _) in xml_str.match_indices("<Name>") {
+            let snippet = &xml_str[i..std::cmp::min(i + 80, xml_str.len())];
+            eprintln!("[Smaug-XML] raw: {}", snippet);
+        }
+    }
     let kdbx: KeePassFile = quick_xml::de::from_reader(data)?;
     Ok(kdbx.xml_to_db(inner_decryptor, header_attachments)?)
 }
@@ -54,9 +61,14 @@ pub fn to_xml(
     let mut attachments = Vec::new();
 
     let kdbx = KeePassFile::db_to_xml(db, inner_encryptor, &mut attachments)?;
-    let xml = quick_xml::se::to_string_with_root("KeePassFile", &kdbx)?
-        .as_bytes()
-        .to_vec();
+    let xml_string = quick_xml::se::to_string_with_root("KeePassFile", &kdbx)?;
+    // Dump serialized XML structure for debugging
+    for line in xml_string.lines() {
+        if line.contains("<Group>") || line.contains("</Group>") || line.contains("<Name>") || line.contains("<Entry>") || line.contains("</Entry>") {
+            eprintln!("[Smaug-SAVE] {}", line.trim());
+        }
+    }
+    let xml = xml_string.as_bytes().to_vec();
 
     Ok((xml, attachments))
 }

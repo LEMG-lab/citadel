@@ -57,7 +57,11 @@ pub struct Group {
     pub children: Vec<GroupOrEntry>,
 }
 
+/// Externally-tagged enum — quick-xml maps `<Group>` to `Group(...)` and
+/// `<Entry>` to `Entry(...)` without touching the parent's text nodes,
+/// which avoids the `$value` space-truncation bug in quick-xml < 0.38.
 #[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "PascalCase")]
 pub enum GroupOrEntry {
     Group(Group),
     Entry(Entry),
@@ -71,6 +75,7 @@ impl Group {
         custom_icons: &HashMap<Uuid, Vec<u8>>,
         inner_decryptor: &mut dyn Cipher,
     ) -> Result<(), UnprotectError> {
+        eprintln!("[Smaug-XML] deserialized group name: {:?} (bytes: {:?})", self.name, self.name.as_bytes());
         target.name = self.name;
         target.notes = self.notes;
         target.icon_id = self.icon_id;
@@ -99,7 +104,6 @@ impl Group {
                         uuid: g.uuid.0,
                         ..Default::default()
                     };
-
                     g.xml_to_db_handle(&mut new_group, header_attachments, custom_icons, inner_decryptor)?;
                     target.groups.push(new_group);
                 }
@@ -238,5 +242,83 @@ mod tests {
         assert_eq!(group.0.enable_searching.unwrap(), false);
         assert_eq!(group.0.custom_data.is_some(), true);
         assert_eq!(group.0.children.len(), 4);
+    }
+
+    #[test]
+    fn test_group_name_with_spaces() {
+        let xml = r#"<Group>
+            <UUID>AAECAwQFBgcICQoLDA0ODw==</UUID>
+            <Name>Cerberus Ledger</Name>
+            <Group>
+                <UUID>AAECAwQFBgcICQoLDA0ODw==</UUID>
+                <Name>Sub Folder With Spaces</Name>
+            </Group>
+            <Entry>
+                <UUID>AAECAwQFBgcICQoLDA0ODw==</UUID>
+            </Entry>
+        </Group>"#;
+
+        let group: Test<Group> = quick_xml::de::from_str(xml).unwrap();
+        assert_eq!(group.0.name, "Cerberus Ledger");
+        let child_groups: Vec<&Group> = group.0.children.iter().filter_map(|c| {
+            if let GroupOrEntry::Group(g) = c { Some(g) } else { None }
+        }).collect();
+        assert_eq!(child_groups.len(), 1);
+        assert_eq!(child_groups[0].name, "Sub Folder With Spaces");
+    }
+
+    #[test]
+    fn test_serialize_deserialize_roundtrip() {
+        // Build a group with a sub-group containing an entry.
+        // Verify serialization then deserialization preserves the entry
+        // inside the sub-group (not flattened to root).
+        let xml = r#"<Group>
+            <UUID>AAECAwQFBgcICQoLDA0ODw==</UUID>
+            <Name>Root</Name>
+            <Group>
+                <UUID>EBESExQVFhcYGRobHB0eHw==</UUID>
+                <Name>My Project</Name>
+                <Entry>
+                    <UUID>ICEiIyQlJicoKSorLC0uLw==</UUID>
+                </Entry>
+            </Group>
+            <Entry>
+                <UUID>MDEyMzQ1Njc4OTo7PD0+Pw==</UUID>
+            </Entry>
+        </Group>"#;
+
+        let parsed: Test<Group> = quick_xml::de::from_str(xml).unwrap();
+        let root = parsed.0;
+
+        // Root should have 2 children: 1 Group + 1 Entry
+        assert_eq!(root.children.len(), 2);
+
+        // First child is the sub-group "My Project"
+        let sub_group = match &root.children[0] {
+            GroupOrEntry::Group(g) => g,
+            _ => panic!("Expected Group child first"),
+        };
+        assert_eq!(sub_group.name, "My Project");
+        // The sub-group should have 1 child entry
+        assert_eq!(sub_group.children.len(), 1);
+        assert!(matches!(&sub_group.children[0], GroupOrEntry::Entry(_)));
+
+        // Second child of root is the root-level entry
+        assert!(matches!(&root.children[1], GroupOrEntry::Entry(_)));
+
+        // Now serialize and deserialize again — verify structure survives
+        let serialized = quick_xml::se::to_string(&Test(root)).unwrap();
+        eprintln!("[test] roundtrip XML: {}", serialized);
+        let reparsed: Test<Group> = quick_xml::de::from_str(&serialized).unwrap();
+        let root2 = reparsed.0;
+
+        assert_eq!(root2.children.len(), 2);
+        let sub2 = match &root2.children[0] {
+            GroupOrEntry::Group(g) => g,
+            _ => panic!("Sub-group lost after roundtrip"),
+        };
+        assert_eq!(sub2.name, "My Project");
+        assert_eq!(sub2.children.len(), 1, "Entry inside sub-group was lost during roundtrip!");
+        assert!(matches!(&root2.children[1], GroupOrEntry::Entry(_)));
     }
 }

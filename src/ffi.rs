@@ -457,6 +457,7 @@ pub extern "C" fn vault_add_entry(
         let notes_s = unsafe { cstr_to_str(notes) };
         let otp_s = unsafe { cstr_to_str(otp_uri) };
         let group_s = unsafe { cstr_to_str(group) };
+        eprintln!("[Smaug-FFI] vault_add_entry — group_s='{}' group_ptr_null={}", group_s, group.is_null());
         let pw = unsafe { read_password(password_ptr, password_len) };
 
         match state.add_entry_full(title_s, username_s, &pw, url_s, notes_s, otp_s, group_s, expiry_time) {
@@ -528,6 +529,36 @@ pub extern "C" fn vault_delete_entry(
             Err(_) => return VaultResult::InternalError,
         };
         match state.delete_entry(uuid) {
+            Ok(()) => VaultResult::Ok,
+            Err(e) => e,
+        }
+    }));
+    result.unwrap_or(VaultResult::InternalError)
+}
+
+/// Move an entry to a different group. Pass null or empty string for root.
+#[no_mangle]
+pub extern "C" fn vault_move_entry(
+    handle: *mut c_void,
+    uuid_str: *const c_char,
+    group_path: *const c_char,
+) -> VaultResult {
+    if handle.is_null() || uuid_str.is_null() {
+        return VaultResult::InternalError;
+    }
+    let result = catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let state = unsafe { &mut *(handle as *mut VaultState) };
+        let uuid_s = unsafe { cstr_to_str(uuid_str) };
+        let uuid = match uuid::Uuid::parse_str(uuid_s) {
+            Ok(u) => u,
+            Err(_) => return VaultResult::InternalError,
+        };
+        let gp = if group_path.is_null() {
+            ""
+        } else {
+            unsafe { cstr_to_str(group_path) }
+        };
+        match state.move_entry(uuid, gp) {
             Ok(()) => VaultResult::Ok,
             Err(e) => e,
         }
