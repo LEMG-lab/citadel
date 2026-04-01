@@ -239,9 +239,8 @@ impl VaultState {
     /// Collect all entries recursively. Excludes entries in the Recycle Bin group.
     pub fn list_entries(&self) -> Vec<EntrySummary> {
         let rb_uuid = self.db.meta.recyclebin_uuid.unwrap_or(uuid::Uuid::nil());
-        let root_name = self.db.root.name.as_str();
         let mut out = Vec::new();
-        collect_entries(&self.db.root, &mut out, rb_uuid, root_name);
+        collect_entries(&self.db.root, &mut out, rb_uuid, "");
         out
     }
 
@@ -726,7 +725,11 @@ fn collect_entries(group: &Group, out: &mut Vec<EntrySummary>, skip_group: uuid:
         if skip_group != uuid::Uuid::nil() && child.uuid == skip_group {
             continue;
         }
-        let child_path = format!("{}/{}", path, child.name);
+        let child_path = if path.is_empty() {
+            child.name.clone()
+        } else {
+            format!("{}/{}", path, child.name)
+        };
         collect_entries(child, out, skip_group, &child_path);
     }
 }

@@ -449,6 +449,9 @@ final class AppState {
 
     func refreshEntries() throws {
         entries = try engine.listEntries()
+        for e in entries {
+            NSLog("[Smaug] entry loaded: title='%@' group='%@'", e.title, e.group)
+        }
         recycledEntries = (try? engine.listRecycledEntries()) ?? []
         computeEntryAlerts()
         statusBar?.refresh()
