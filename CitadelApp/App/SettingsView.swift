@@ -25,6 +25,9 @@ struct SettingsView: View {
     @State private var emergencyPassword = ""
     @State private var emergencyConfirm = ""
     @State private var emergencyMessage: String?
+    @State private var selectedCipher: UInt32 = 0
+    @State private var showingCipherConfirmation = false
+    @State private var cipherMessage: String?
     @State private var showingAbout = false
     @State private var showingCSVExportWarning = false
     @State private var showingReAuthForCSV = false
@@ -79,6 +82,13 @@ struct SettingsView: View {
         } message: {
             Text("This will re-encrypt your vault with \(selectedKdfPreset.label) KDF parameters.")
         }
+        .confirmationDialog("Change Vault Cipher", isPresented: $showingCipherConfirmation, titleVisibility: .visible) {
+            Button("Re-encrypt Vault") { applyCipherChange() }
+            Button("Cancel", role: .cancel) { selectedCipher = appState.engine.getCipherCode() }
+        } message: {
+            Text("This will re-encrypt your vault with \(cipherDisplayName(selectedCipher)). The change takes effect after saving.")
+        }
+        .onAppear { selectedCipher = appState.engine.getCipherCode() }
         .alert("Data Operation", isPresented: $showingDataResult) { Button("OK") {} } message: { Text(dataResultMessage ?? "") }
         .confirmationDialog("Export Passwords", isPresented: $showingCSVExportWarning, titleVisibility: .visible) {
             Button("Export Anyway", role: .destructive) {
@@ -244,6 +254,32 @@ struct SettingsView: View {
                         }.labelsHidden().frame(width: 140)
                     }
                     if let msg = kdfMessage {
+                        Text(msg).font(.system(size: 11))
+                            .foregroundStyle(msg.contains("failed") ? Color.citadelDanger : Color.citadelSuccess)
+                    }
+                }
+            }
+            settingsRow(icon: "lock.shield", iconColor: .cyan) {
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack {
+                        Text("Vault Cipher").font(.system(size: 13))
+                        Spacer()
+                        Picker("", selection: $selectedCipher) {
+                            Text("ChaCha20-256").tag(UInt32(0))
+                            Text("AES-256 (NIST certified)").tag(UInt32(1))
+                        }
+                        .labelsHidden()
+                        .frame(width: 200)
+                        .onChange(of: selectedCipher) { _, newValue in
+                            if newValue != appState.engine.getCipherCode() {
+                                showingCipherConfirmation = true
+                            }
+                        }
+                    }
+                    Text(cipherDescription(selectedCipher))
+                        .font(.system(size: 11))
+                        .foregroundStyle(Color.citadelSecondary)
+                    if let msg = cipherMessage {
                         Text(msg).font(.system(size: 11))
                             .foregroundStyle(msg.contains("failed") ? Color.citadelDanger : Color.citadelSuccess)
                     }
@@ -424,6 +460,33 @@ struct SettingsView: View {
     }
 
     // MARK: - Actions
+
+    private func applyCipherChange() {
+        do {
+            try appState.engine.setCipher(selectedCipher)
+            try appState.save()
+            cipherMessage = "Cipher changed to \(cipherDisplayName(selectedCipher))."
+        } catch {
+            cipherMessage = "Cipher change failed."
+            selectedCipher = appState.engine.getCipherCode()
+        }
+    }
+
+    private func cipherDisplayName(_ cipher: UInt32) -> String {
+        switch cipher {
+        case 0: return "ChaCha20-256"
+        case 1: return "AES-256"
+        default: return "Unknown"
+        }
+    }
+
+    private func cipherDescription(_ cipher: UInt32) -> String {
+        switch cipher {
+        case 0: return "ChaCha20 stream cipher — fast, modern, default for new vaults."
+        case 1: return "AES-256 — NIST certified, widely audited, post-quantum safe."
+        default: return ""
+        }
+    }
 
     private func applyKdfChange() {
         do {

@@ -191,6 +191,38 @@ pub extern "C" fn vault_set_kdf_params(
     result.unwrap_or(VaultResult::InternalError)
 }
 
+/// Get the outer cipher of an open vault.
+/// Returns 0 = ChaCha20, 1 = AES-256, 2 = Twofish.
+/// On error (null handle), returns 255.
+#[no_mangle]
+pub extern "C" fn vault_get_cipher(handle: *mut c_void) -> u32 {
+    if handle.is_null() {
+        return 255;
+    }
+    let result = catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let state = unsafe { &*(handle as *const VaultState) };
+        state.get_cipher()
+    }));
+    result.unwrap_or(255)
+}
+
+/// Set the outer cipher on an open vault. Takes effect on next save.
+/// cipher: 0 = ChaCha20, 1 = AES-256, 2 = Twofish.
+#[no_mangle]
+pub extern "C" fn vault_set_cipher(handle: *mut c_void, cipher: u32) -> VaultResult {
+    if handle.is_null() {
+        return VaultResult::InternalError;
+    }
+    let result = catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let state = unsafe { &mut *(handle as *mut VaultState) };
+        match state.set_cipher(cipher) {
+            Ok(()) => VaultResult::Ok,
+            Err(e) => e,
+        }
+    }));
+    result.unwrap_or(VaultResult::InternalError)
+}
+
 #[no_mangle]
 pub extern "C" fn vault_save_to(handle: *mut c_void, path: *const c_char) -> VaultResult {
     if handle.is_null() || path.is_null() {

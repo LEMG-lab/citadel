@@ -35,7 +35,7 @@ struct EntryDetailView: View {
 
     private var isCryptoSeedType: Bool {
         let t = entry?.entryType ?? ""
-        return t == "seed_phrase" || t == "multi_chain_wallet"
+        return t == "seed_phrase" || t == "multi_chain_wallet" || t == "crypto_wallet"
     }
 
     private var isRecoveryCodes: Bool {

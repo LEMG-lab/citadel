@@ -16,10 +16,8 @@ public struct TemplateField {
 /// Entry templates that pre-populate custom fields for common credential types.
 public enum EntryTemplate: String, CaseIterable, Identifiable {
     case login
-    case seedPhrase
-    case privateKey
-    case multiChainWallet
     case cryptoWallet
+    case multiChainWallet
     case serverSSH
     case apiKey
     case database
@@ -35,10 +33,8 @@ public enum EntryTemplate: String, CaseIterable, Identifiable {
     public var displayName: String {
         switch self {
         case .login:            return "Login"
-        case .seedPhrase:       return "Seed Phrase"
-        case .privateKey:       return "Private Key"
-        case .multiChainWallet: return "Wallet (Multi-Chain)"
         case .cryptoWallet:     return "Crypto Wallet"
+        case .multiChainWallet: return "Wallet (Multi-Chain)"
         case .serverSSH:        return "Server / SSH"
         case .apiKey:           return "API Key"
         case .database:         return "Database"
@@ -54,10 +50,8 @@ public enum EntryTemplate: String, CaseIterable, Identifiable {
     public var icon: String {
         switch self {
         case .login:            return "key.fill"
-        case .seedPhrase:       return "rectangle.grid.2x2"
-        case .privateKey:       return "lock.fill"
-        case .multiChainWallet: return "link.circle"
         case .cryptoWallet:     return "bitcoinsign.circle"
+        case .multiChainWallet: return "link.circle"
         case .serverSSH:        return "server.rack"
         case .apiKey:           return "curlybraces"
         case .database:         return "cylinder"
@@ -74,10 +68,8 @@ public enum EntryTemplate: String, CaseIterable, Identifiable {
     public var typeString: String {
         switch self {
         case .login:            return "password"
-        case .seedPhrase:       return "seed_phrase"
-        case .privateKey:       return "private_key"
-        case .multiChainWallet: return "multi_chain_wallet"
         case .cryptoWallet:     return "crypto_wallet"
+        case .multiChainWallet: return "multi_chain_wallet"
         case .serverSSH:        return "server_ssh"
         case .apiKey:           return "api_key"
         case .database:         return "database"
@@ -98,19 +90,19 @@ public enum EntryTemplate: String, CaseIterable, Identifiable {
     /// Whether the template uses the standard username/password/URL fields.
     public var usesStandardFields: Bool {
         switch self {
-        case .secureNote, .identity, .creditCard, .seedPhrase, .privateKey, .multiChainWallet:
+        case .secureNote, .identity, .creditCard, .cryptoWallet, .multiChainWallet:
             return false
         default:
             return true
         }
     }
 
-    /// Whether this is a crypto seed phrase type (seed_phrase or multi_chain_wallet).
+    /// Whether this template has individual seed word fields.
     public var hasSeedWords: Bool {
-        self == .seedPhrase || self == .multiChainWallet
+        self == .cryptoWallet || self == .multiChainWallet
     }
 
-    /// Whether this is any crypto-related entry type.
+    /// All crypto-related entry type strings (including legacy types for backward compatibility).
     public static let cryptoTypes: Set<String> = [
         "seed_phrase", "private_key", "multi_chain_wallet", "crypto_wallet"
     ]
@@ -129,13 +121,11 @@ public enum EntryTemplate: String, CaseIterable, Identifiable {
         case .login:
             return [] // Uses standard title/username/password/URL/notes
 
-        case .seedPhrase:
+        case .cryptoWallet:
             var fields = [
-                TemplateField(key: "Network", placeholder: "Ethereum / Solana / Bitcoin / Avalanche / Polygon / Base / Arbitrum"),
-                TemplateField(key: "Wallet App", placeholder: "MetaMask / Phantom / Rabby / Ledger / Trezor"),
                 TemplateField(key: "Wallet Address", placeholder: "0x... or public address"),
-                TemplateField(key: "Seed Phrase Length", placeholder: "24"),
-                TemplateField(key: "Derivation Path", placeholder: "m/44'/60'/0'/0/0"),
+                TemplateField(key: "Network", placeholder: "Ethereum / Solana / Bitcoin / Avalanche / Polygon"),
+                TemplateField(key: "Private Key", placeholder: "", isProtected: true),
             ]
             // 24 individual seed word fields
             for i in 1...24 {
@@ -143,18 +133,9 @@ public enum EntryTemplate: String, CaseIterable, Identifiable {
             }
             return fields
 
-        case .privateKey:
-            return [
-                TemplateField(key: "Network", placeholder: "Ethereum / Solana / Bitcoin / Avalanche / Polygon / Base / Arbitrum"),
-                TemplateField(key: "Key Format", placeholder: "Hex / Base58 / WIF"),
-                TemplateField(key: "Associated Address", placeholder: "0x... or public address"),
-                TemplateField(key: "Usage", placeholder: "Deployer / Validator / Hot Wallet / Cold Wallet"),
-            ]
-
         case .multiChainWallet:
             var fields = [
                 TemplateField(key: "Wallet App", placeholder: "MetaMask / Phantom / Rabby / Ledger"),
-                TemplateField(key: "Seed Phrase Length", placeholder: "24"),
                 TemplateField(key: "Derivation Path", placeholder: "m/44'/60'/0'/0/0"),
             ]
             for i in 1...24 {
@@ -167,15 +148,6 @@ public enum EntryTemplate: String, CaseIterable, Identifiable {
                 TemplateField(key: "AVAX Address", placeholder: ""),
             ])
             return fields
-
-        case .cryptoWallet:
-            return [
-                TemplateField(key: "Wallet Name", placeholder: "e.g. MetaMask"),
-                TemplateField(key: "Address", placeholder: "0x..."),
-                TemplateField(key: "Seed Phrase", placeholder: "12 or 24 words", isProtected: true),
-                TemplateField(key: "Private Key", placeholder: "", isProtected: true),
-                TemplateField(key: "Network", placeholder: "Ethereum / Avalanche / Bitcoin / Solana"),
-            ]
 
         case .serverSSH:
             return [

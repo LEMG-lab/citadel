@@ -39,6 +39,7 @@ struct EntryEditView: View {
     @State private var tagsText = ""
     @State private var selectedTemplate: EntryTemplate = .login
     @State private var templateApplied = false
+    @State private var revealedFieldIDs: Set<UUID> = []
 
     private var isEditing: Bool {
         if case .edit = mode { return true }
@@ -50,11 +51,7 @@ struct EntryEditView: View {
     }
 
     private var isSeedPhraseType: Bool {
-        entryType == "seed_phrase" || entryType == "multi_chain_wallet"
-    }
-
-    private var isPrivateKeyType: Bool {
-        entryType == "private_key"
+        entryType == "seed_phrase" || entryType == "multi_chain_wallet" || entryType == "crypto_wallet"
     }
 
     private var isCryptoType: Bool {
@@ -222,86 +219,22 @@ struct EntryEditView: View {
 
             styledField("Title", text: $title, icon: "character.cursor.ibeam")
 
-            if isPrivateKeyType {
-                // Private Key uses the standard password field for the key
-                VStack(alignment: .leading, spacing: 6) {
-                    HStack(spacing: 8) {
-                        Image(systemName: "lock")
-                            .font(.system(size: 12, weight: .medium))
-                            .foregroundStyle(Color.citadelSecondary)
-                            .frame(width: 16)
-
-                        if showPassword {
-                            TextField(text: $password, prompt: Text("Private Key").foregroundStyle(.tertiary)) {}
-                                .font(.system(size: 13, design: .monospaced))
-                        } else {
-                            SecureField(text: $password, prompt: Text("Private Key").foregroundStyle(.tertiary)) {}
-                                .font(.system(size: 13))
-                        }
-
-                        Button { showPassword.toggle() } label: {
-                            Image(systemName: showPassword ? "eye.slash" : "eye")
-                                .font(.system(size: 12))
-                                .foregroundStyle(Color.citadelSecondary)
-                        }
-                        .buttonStyle(.plain)
-                    }
-                    .textFieldStyle(.plain)
-                    .padding(10)
-                    .background(Color.cardBackground.opacity(0.6), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-                    .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).stroke(Color.subtleSeparator.opacity(0.3), lineWidth: 0.5))
-                }
+            // Standard layout: username, password, URL
+            if usesStandardFields {
+                styledField("Username", text: $username, icon: "person", copyAction: username.isEmpty ? nil : { appState.clipboard.copySecure(username) })
+                passwordFieldView(placeholder: "Password")
+                styledField("URL", text: $url, icon: "link", copyAction: url.isEmpty ? nil : { appState.clipboard.copySecure(url) })
             }
 
-            if usesStandardFields {
-                styledField("Username", text: $username, icon: "person")
+            // Crypto wallet layout: template fields → seed words → passphrase → notes → TOTP → URL
+            if isCryptoType && !usesStandardFields {
+                cryptoInlineFieldsView
 
-                // Password field with strength bar
-                VStack(alignment: .leading, spacing: 6) {
-                    HStack(spacing: 8) {
-                        Image(systemName: "lock")
-                            .font(.system(size: 12, weight: .medium))
-                            .foregroundStyle(Color.citadelSecondary)
-                            .frame(width: 16)
-
-                        if showPassword {
-                            TextField(text: $password, prompt: Text("Password").foregroundStyle(.tertiary)) {}
-                                .font(.system(size: 13, design: .monospaced))
-                        } else {
-                            SecureField(text: $password, prompt: Text("Password").foregroundStyle(.tertiary)) {}
-                                .font(.system(size: 13))
-                        }
-
-                        Button {
-                            showPassword.toggle()
-                        } label: {
-                            Image(systemName: showPassword ? "eye.slash" : "eye")
-                                .font(.system(size: 12))
-                                .foregroundStyle(Color.citadelSecondary)
-                        }
-                        .buttonStyle(.plain)
-                        .help(showPassword ? "Hide" : "Show")
-
-                        Button {
-                            showingGenerator = true
-                        } label: {
-                            Image(systemName: "wand.and.stars")
-                                .font(.system(size: 13))
-                                .foregroundStyle(Color.citadelAccent)
-                        }
-                        .buttonStyle(.plain)
-                        .help("Generate password")
-                    }
-                    .textFieldStyle(.plain)
-                    .padding(10)
-                    .background(Color.cardBackground.opacity(0.6), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-                    .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).stroke(Color.subtleSeparator.opacity(0.3), lineWidth: 0.5))
-
-                    PasswordStrengthBar(password: password)
-                        .padding(.horizontal, 2)
+                if isSeedPhraseType {
+                    seedWordsSection
                 }
 
-                styledField("URL", text: $url, icon: "link")
+                passwordFieldView(placeholder: "Wallet Passphrase")
             }
 
             // Notes / secure note content
@@ -321,6 +254,10 @@ struct EntryEditView: View {
                     .textFieldStyle(.plain)
                     .font(.system(size: 13))
                     .lineLimit(3...10)
+
+                    if !notes.isEmpty {
+                        editCopyButton { appState.clipboard.copySecure(notes) }
+                    }
                 }
                 .padding(10)
                 .background(Color.cardBackground.opacity(0.6), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
@@ -330,7 +267,120 @@ struct EntryEditView: View {
             if !isSecureNote {
                 styledField("TOTP URI (otpauth://...)", text: $otpURI, icon: "timer", monospaced: true)
             }
+
+            // URL at end for crypto types
+            if isCryptoType && !usesStandardFields {
+                styledField("URL", text: $url, icon: "link", copyAction: url.isEmpty ? nil : { appState.clipboard.copySecure(url) })
+            }
         }
+    }
+
+    // MARK: - Password Field
+
+    @ViewBuilder
+    private func passwordFieldView(placeholder: String) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 8) {
+                Image(systemName: "lock")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(Color.citadelSecondary)
+                    .frame(width: 16)
+
+                if showPassword {
+                    TextField(text: $password, prompt: Text(placeholder).foregroundStyle(.tertiary)) {}
+                        .font(.system(size: 13, design: .monospaced))
+                } else {
+                    SecureField(text: $password, prompt: Text(placeholder).foregroundStyle(.tertiary)) {}
+                        .font(.system(size: 13))
+                }
+
+                Button { showPassword.toggle() } label: {
+                    Image(systemName: showPassword ? "eye.slash" : "eye")
+                        .font(.system(size: 12))
+                        .foregroundStyle(Color.citadelSecondary)
+                }
+                .buttonStyle(.plain)
+                .help(showPassword ? "Hide" : "Show")
+
+                Button { showingGenerator = true } label: {
+                    Image(systemName: "wand.and.stars")
+                        .font(.system(size: 13))
+                        .foregroundStyle(Color.citadelAccent)
+                }
+                .buttonStyle(.plain)
+                .help("Generate password")
+
+                if !password.isEmpty {
+                    editCopyButton { appState.clipboard.copyPassword(Data(password.utf8)) }
+                }
+            }
+            .textFieldStyle(.plain)
+            .padding(10)
+            .background(Color.cardBackground.opacity(0.6), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).stroke(Color.subtleSeparator.opacity(0.3), lineWidth: 0.5))
+
+            PasswordStrengthBar(password: password)
+                .padding(.horizontal, 2)
+        }
+    }
+
+    // MARK: - Crypto Inline Fields
+
+    @ViewBuilder
+    private var cryptoInlineFieldsView: some View {
+        let templateFieldKeys = selectedTemplate.fields
+            .filter { !$0.key.hasPrefix(EntryTemplate.seedWordPrefix) }
+            .map(\.key)
+        ForEach(templateFieldKeys, id: \.self) { key in
+            if let idx = customFields.firstIndex(where: { $0.key == key }) {
+                if customFields[idx].isProtected {
+                    protectedInlineField(index: idx, label: key)
+                } else {
+                    styledField(key, text: $customFields[idx].value, copyAction: customFields[idx].value.isEmpty ? nil : { appState.clipboard.copySecure(customFields[idx].value) })
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func protectedInlineField(index: Int, label: String) -> some View {
+        let fieldID = customFields[index].id
+        let isRevealed = revealedFieldIDs.contains(fieldID)
+        HStack(spacing: 8) {
+            Image(systemName: "lock")
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(Color.citadelSecondary)
+                .frame(width: 16)
+
+            if isRevealed {
+                TextField(text: $customFields[index].value, prompt: Text(label).foregroundStyle(.tertiary)) {}
+                    .font(.system(size: 13, design: .monospaced))
+            } else {
+                SecureField(text: $customFields[index].value, prompt: Text(label).foregroundStyle(.tertiary)) {}
+                    .font(.system(size: 13))
+            }
+
+            Button {
+                if revealedFieldIDs.contains(fieldID) {
+                    revealedFieldIDs.remove(fieldID)
+                } else {
+                    revealedFieldIDs.insert(fieldID)
+                }
+            } label: {
+                Image(systemName: isRevealed ? "eye.slash" : "eye")
+                    .font(.system(size: 12))
+                    .foregroundStyle(Color.citadelSecondary)
+            }
+            .buttonStyle(.plain)
+
+            if !customFields[index].value.isEmpty {
+                editCopyButton { appState.clipboard.copyPassword(Data(customFields[index].value.utf8)) }
+            }
+        }
+        .textFieldStyle(.plain)
+        .padding(10)
+        .background(Color.cardBackground.opacity(0.6), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).stroke(Color.subtleSeparator.opacity(0.3), lineWidth: 0.5))
     }
 
     // MARK: - Folder
@@ -403,7 +453,7 @@ struct EntryEditView: View {
         }
     }
 
-    // MARK: - Custom Fields
+    // MARK: - Seed Words & Custom Fields
 
     private var seedWordFields: [Binding<EditableCustomField>] {
         $customFields.filter { $0.wrappedValue.key.hasPrefix(EntryTemplate.seedWordPrefix) }
@@ -411,6 +461,19 @@ struct EntryEditView: View {
 
     private var nonSeedWordFields: [Binding<EditableCustomField>] {
         $customFields.filter { !$0.wrappedValue.key.hasPrefix(EntryTemplate.seedWordPrefix) }
+    }
+
+    /// Custom fields not shown inline (for the custom fields section).
+    private var visibleCustomFields: [Binding<EditableCustomField>] {
+        if isCryptoType && !usesStandardFields {
+            // Skip seed words and template-defined fields (shown inline in coreFieldsSection)
+            let templateKeys = Set(selectedTemplate.fields.map(\.key))
+            return $customFields.filter { !templateKeys.contains($0.wrappedValue.key) }
+        } else if isSeedPhraseType {
+            return nonSeedWordFields
+        } else {
+            return Array($customFields)
+        }
     }
 
     @ViewBuilder
@@ -424,19 +487,74 @@ struct EntryEditView: View {
                 LazyVGrid(columns: columns, spacing: 8) {
                     ForEach(words) { $field in
                         let num = String(field.key.suffix(2))
-                        HStack(spacing: 4) {
+                        let isRevealed = revealedFieldIDs.contains(field.id)
+                        HStack(spacing: 3) {
                             Text(num)
                                 .font(.system(size: 10, weight: .medium, design: .monospaced))
                                 .foregroundStyle(Color.citadelSecondary)
                                 .frame(width: 18)
-                            SecureField(text: $field.value, prompt: Text("").foregroundStyle(.tertiary)) {}
-                                .font(.system(size: 12))
-                                .textFieldStyle(.plain)
+
+                            if isRevealed {
+                                TextField(text: $field.value, prompt: Text("").foregroundStyle(.tertiary)) {}
+                                    .font(.system(size: 11))
+                                    .textFieldStyle(.plain)
+                            } else {
+                                SecureField(text: $field.value, prompt: Text("").foregroundStyle(.tertiary)) {}
+                                    .font(.system(size: 11))
+                                    .textFieldStyle(.plain)
+                            }
+
+                            Button {
+                                if revealedFieldIDs.contains(field.id) {
+                                    revealedFieldIDs.remove(field.id)
+                                } else {
+                                    revealedFieldIDs.insert(field.id)
+                                }
+                            } label: {
+                                Image(systemName: isRevealed ? "eye.slash" : "eye")
+                                    .font(.system(size: 9))
+                                    .foregroundStyle(Color.citadelSecondary)
+                            }
+                            .buttonStyle(.plain)
+
+                            if !field.value.isEmpty {
+                                Button {
+                                    appState.clipboard.copyPassword(Data(field.value.utf8))
+                                } label: {
+                                    Image(systemName: "doc.on.doc")
+                                        .font(.system(size: 9))
+                                        .foregroundStyle(Color.citadelSecondary)
+                                }
+                                .buttonStyle(.plain)
+                                .help("Copy")
+                            }
                         }
-                        .padding(6)
+                        .padding(5)
                         .background(Color.cardBackground.opacity(0.6), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
                         .overlay(RoundedRectangle(cornerRadius: 6, style: .continuous).stroke(Color.subtleSeparator.opacity(0.3), lineWidth: 0.5))
                     }
+                }
+
+                // Copy Full Seed Phrase button
+                let filledWords = words.map(\.wrappedValue).filter { !$0.value.isEmpty }
+                if filledWords.count > 1 {
+                    Button {
+                        let phrase = filledWords
+                            .sorted { $0.key < $1.key }
+                            .map(\.value)
+                            .joined(separator: " ")
+                        appState.clipboard.copyPassword(Data(phrase.utf8))
+                    } label: {
+                        HStack(spacing: 5) {
+                            Image(systemName: "doc.on.doc")
+                                .font(.system(size: 12))
+                            Text("Copy Full Seed Phrase")
+                                .font(.system(size: 12, weight: .medium))
+                        }
+                        .foregroundStyle(Color.citadelAccent)
+                        .padding(.vertical, 6)
+                    }
+                    .buttonStyle(.plain)
                 }
             }
         }
@@ -444,15 +562,15 @@ struct EntryEditView: View {
 
     @ViewBuilder
     private var customFieldsSection: some View {
-        if isSeedPhraseType {
+        // Seed words for non-crypto seed types (e.g. legacy entries not handled by crypto inline)
+        if isSeedPhraseType && !(isCryptoType && !usesStandardFields) {
             seedWordsSection
         }
 
         VStack(alignment: .leading, spacing: 10) {
             SectionHeader(title: "Custom Fields")
 
-            let fields = isSeedPhraseType ? nonSeedWordFields : Array($customFields)
-            ForEach(fields) { $field in
+            ForEach(visibleCustomFields) { $field in
                 HStack(spacing: 8) {
                     TextField(text: $field.key, prompt: Text("Name").foregroundStyle(.tertiary)) {}
                         .textFieldStyle(.plain)
@@ -468,6 +586,16 @@ struct EntryEditView: View {
                         .padding(8)
                         .background(Color.cardBackground.opacity(0.6), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
                         .overlay(RoundedRectangle(cornerRadius: 7, style: .continuous).stroke(Color.subtleSeparator.opacity(0.3), lineWidth: 0.5))
+
+                    if !field.value.isEmpty {
+                        editCopyButton {
+                            if field.isProtected {
+                                appState.clipboard.copyPassword(Data(field.value.utf8))
+                            } else {
+                                appState.clipboard.copySecure(field.value)
+                            }
+                        }
+                    }
 
                     Button {
                         field.isProtected.toggle()
@@ -525,10 +653,25 @@ struct EntryEditView: View {
         .background(Color.citadelDanger.opacity(0.85), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
     }
 
+    // MARK: - Copy Button
+
+    @ViewBuilder
+    private func editCopyButton(_ action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: "doc.on.doc")
+                .font(.system(size: 12))
+                .foregroundStyle(Color.citadelSecondary)
+                .padding(6)
+                .background(Color.citadelSecondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .help("Copy")
+    }
+
     // MARK: - Styled Field
 
     @ViewBuilder
-    private func styledField(_ placeholder: String, text: Binding<String>, icon: String? = nil, monospaced: Bool = false) -> some View {
+    private func styledField(_ placeholder: String, text: Binding<String>, icon: String? = nil, monospaced: Bool = false, copyAction: (() -> Void)? = nil) -> some View {
         HStack(spacing: 8) {
             if let icon {
                 Image(systemName: icon)
@@ -540,6 +683,10 @@ struct EntryEditView: View {
             TextField(text: text, prompt: Text(placeholder).foregroundStyle(.tertiary)) {}
                 .textFieldStyle(.plain)
                 .font(.system(size: 13, design: monospaced ? .monospaced : .default))
+
+            if let copyAction {
+                editCopyButton(copyAction)
+            }
         }
         .padding(10)
         .background(Color.cardBackground.opacity(0.6), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
@@ -572,6 +719,12 @@ struct EntryEditView: View {
             notes = entry.notes
             otpURI = entry.otpURI
             entryType = entry.entryType.isEmpty ? "password" : entry.entryType
+            // Set selectedTemplate based on entryType for correct form layout
+            if EntryTemplate.cryptoTypes.contains(entryType) {
+                selectedTemplate = .cryptoWallet
+            } else if let template = EntryTemplate.allCases.first(where: { $0.typeString == entryType }) {
+                selectedTemplate = template
+            }
             if let exp = entry.expiryDate {
                 hasExpiry = true
                 expiryDate = exp

@@ -136,6 +136,38 @@ public final class VaultEngine: @unchecked Sendable {
         try check(result)
     }
 
+    /// Get the current outer cipher. Returns "ChaCha20", "AES-256", or "Twofish".
+    public func getCipher() -> String {
+        lock.lock()
+        defer { lock.unlock() }
+        guard let h = handle else { return "Unknown" }
+        let code = vault_get_cipher(h)
+        switch code {
+        case 0: return "ChaCha20"
+        case 1: return "AES-256"
+        case 2: return "Twofish"
+        default: return "Unknown"
+        }
+    }
+
+    /// Get the raw cipher code (0 = ChaCha20, 1 = AES-256, 2 = Twofish).
+    public func getCipherCode() -> UInt32 {
+        lock.lock()
+        defer { lock.unlock() }
+        guard let h = handle else { return 255 }
+        return vault_get_cipher(h)
+    }
+
+    /// Set the outer cipher. Takes effect on next save.
+    /// - Parameter cipher: 0 = ChaCha20, 1 = AES-256, 2 = Twofish
+    public func setCipher(_ cipher: UInt32) throws {
+        lock.lock()
+        defer { lock.unlock() }
+        let h = try _requireHandle()
+        let result = vault_set_cipher(h, cipher)
+        try check(result)
+    }
+
     // MARK: - Entry Operations
 
     /// List all entries (no passwords).

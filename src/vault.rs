@@ -198,6 +198,29 @@ impl VaultState {
         };
     }
 
+    /// Get the outer cipher: 0 = ChaCha20, 1 = AES-256, 2 = Twofish.
+    pub fn get_cipher(&self) -> u32 {
+        match self.db.config.outer_cipher_config {
+            OuterCipherConfig::ChaCha20 => 0,
+            OuterCipherConfig::AES256 => 1,
+            OuterCipherConfig::Twofish => 2,
+        }
+    }
+
+    /// Set the outer cipher. 0 = ChaCha20, 1 = AES-256, 2 = Twofish.
+    /// Takes effect on next save.
+    pub fn set_cipher(&mut self, cipher: u32) -> Result<(), VaultResult> {
+        let outer = match cipher {
+            0 => OuterCipherConfig::ChaCha20,
+            1 => OuterCipherConfig::AES256,
+            2 => OuterCipherConfig::Twofish,
+            _ => return Err(VaultResult::InternalError),
+        };
+        // Inner cipher stays ChaCha20 for protected value streams (standard KDBX 4 practice)
+        self.db.config.outer_cipher_config = outer;
+        Ok(())
+    }
+
     /// Change the stored password (and optionally keyfile). Takes effect on next save.
     pub fn change_password(&mut self, new_password: &[u8], new_keyfile: Option<&str>) -> Result<(), VaultResult> {
         if new_password.is_empty() {

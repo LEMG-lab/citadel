@@ -198,6 +198,19 @@ enum VaultResult vault_set_kdf_params(void *handle,
                                       uint64_t kdf_iterations,
                                       uint32_t kdf_parallelism);
 
+/**
+ * Get the outer cipher of an open vault.
+ * Returns 0 = ChaCha20, 1 = AES-256, 2 = Twofish.
+ * On error (null handle), returns 255.
+ */
+uint32_t vault_get_cipher(void *handle);
+
+/**
+ * Set the outer cipher on an open vault. Takes effect on next save.
+ * cipher: 0 = ChaCha20, 1 = AES-256, 2 = Twofish.
+ */
+enum VaultResult vault_set_cipher(void *handle, uint32_t cipher);
+
 enum VaultResult vault_save_to(void *handle, const char *path);
 
 enum VaultResult vault_validate(const char *path,

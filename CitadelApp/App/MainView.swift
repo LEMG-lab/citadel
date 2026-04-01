@@ -7,12 +7,10 @@ import CitadelCore
 enum SidebarItem: Hashable {
     case allItems
     case favorites
-    // Per-type filters (all 14 templates)
+    // Per-type filters
     case logins
-    case seedPhrases
-    case privateKeys
-    case multiChainWallets
     case cryptoWallets
+    case multiChainWallets
     case serverSSH
     case apiKeys
     case databases
@@ -77,14 +75,10 @@ struct MainView: View {
             return appState.entries.filter(\.isFavorite)
         case .logins:
             return appState.entries.filter { $0.entryType == "password" || $0.entryType.isEmpty }
-        case .seedPhrases:
-            return appState.entries.filter { $0.entryType == "seed_phrase" }
-        case .privateKeys:
-            return appState.entries.filter { $0.entryType == "private_key" }
+        case .cryptoWallets:
+            return appState.entries.filter { EntryTemplate.cryptoTypes.contains($0.entryType) }
         case .multiChainWallets:
             return appState.entries.filter { $0.entryType == "multi_chain_wallet" }
-        case .cryptoWallets:
-            return appState.entries.filter { $0.entryType == "crypto_wallet" }
         case .serverSSH:
             return appState.entries.filter { $0.entryType == "server_ssh" }
         case .apiKeys:
@@ -447,10 +441,8 @@ struct MainView: View {
             Section("Categories") {
                 sidebarRow("All Items", icon: "square.grid.2x2", color: .citadelAccent, item: .allItems, count: appState.entries.count)
                 sidebarRow("Logins", icon: "key.fill", color: .blue, item: .logins, count: appState.entries.filter { $0.entryType == "password" || $0.entryType.isEmpty }.count)
-                sidebarRow("Seed Phrases", icon: "rectangle.grid.2x2", color: .orange, item: .seedPhrases, count: appState.entries.filter { $0.entryType == "seed_phrase" }.count)
-                sidebarRow("Private Keys", icon: "lock.fill", color: .orange, item: .privateKeys, count: appState.entries.filter { $0.entryType == "private_key" }.count)
+                sidebarRow("Crypto Wallets", icon: "bitcoinsign.circle", color: .orange, item: .cryptoWallets, count: appState.entries.filter { EntryTemplate.cryptoTypes.contains($0.entryType) }.count)
                 sidebarRow("Wallet (Multi-Chain)", icon: "link.circle", color: .orange, item: .multiChainWallets, count: appState.entries.filter { $0.entryType == "multi_chain_wallet" }.count)
-                sidebarRow("Crypto Wallets", icon: "bitcoinsign.circle.fill", color: .orange, item: .cryptoWallets, count: appState.entries.filter { $0.entryType == "crypto_wallet" }.count)
                 sidebarRow("Server / SSH", icon: "server.rack", color: .cyan, item: .serverSSH, count: appState.entries.filter { $0.entryType == "server_ssh" }.count)
                 sidebarRow("API Keys", icon: "curlybraces", color: .red, item: .apiKeys, count: appState.entries.filter { $0.entryType == "api_key" }.count)
                 sidebarRow("Databases", icon: "cylinder", color: .blue, item: .databases, count: appState.entries.filter { $0.entryType == "database" }.count)

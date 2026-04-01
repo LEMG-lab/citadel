@@ -8,7 +8,7 @@ name = "citadel_core"
 crate-type = ["lib", "staticlib"]
 
 [dependencies]
-keepass = { version = "0.10", features = ["save_kdbx4"] }
+keepass = { path = "deps/keepass-rs", features = ["save_kdbx4"] }
 rust-argon2 = "3"
 chrono = "0.4"
 zeroize = { version = "1", features = ["zeroize_derive"] }
