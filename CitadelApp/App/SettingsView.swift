@@ -29,6 +29,7 @@ struct SettingsView: View {
     @State private var showingCipherConfirmation = false
     @State private var cipherMessage: String?
     @State private var showingAbout = false
+    @State private var vaultExportMessage: String?
     @State private var showingCSVExportWarning = false
     @State private var showingReAuthForCSV = false
     @State private var showingReAuthForEmergency = false
@@ -280,6 +281,22 @@ struct SettingsView: View {
                         .font(.system(size: 11))
                         .foregroundStyle(Color.citadelSecondary)
                     if let msg = cipherMessage {
+                        Text(msg).font(.system(size: 11))
+                            .foregroundStyle(msg.contains("failed") ? Color.citadelDanger : Color.citadelSuccess)
+                    }
+                }
+            }
+            settingsRow(icon: "square.and.arrow.up", iconColor: .orange) {
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack {
+                        Text("Export Vault (.kdbx)").font(.system(size: 13))
+                        Spacer()
+                        Button("Export\u{2026}") { exportVault() }.font(.system(size: 12))
+                    }
+                    Text("Save a copy of the encrypted vault file to any location (Desktop, USB, AirDrop, etc.).")
+                        .font(.system(size: 11))
+                        .foregroundStyle(Color.citadelSecondary)
+                    if let msg = vaultExportMessage {
                         Text(msg).font(.system(size: 11))
                             .foregroundStyle(msg.contains("failed") ? Color.citadelDanger : Color.citadelSuccess)
                     }
@@ -589,6 +606,31 @@ struct SettingsView: View {
             emergencyConfirm = ""
         } catch {
             emergencyMessage = "Export failed: \(error.localizedDescription)"
+        }
+    }
+
+    private func exportVault() {
+        let sourcePath = appState.vaultPath
+        let vaultName = (sourcePath as NSString).lastPathComponent
+        let panel = NSSavePanel()
+        panel.title = "Export Vault (.kdbx)"
+        panel.nameFieldStringValue = vaultName
+        panel.allowedContentTypes = [.init(filenameExtension: "kdbx") ?? .data]
+        panel.canCreateDirectories = true
+        if let desktop = FileManager.default.urls(for: .desktopDirectory, in: .userDomainMask).first {
+            panel.directoryURL = desktop
+        }
+        guard panel.runModal() == .OK, let destinationURL = panel.url else { return }
+        do {
+            let sourceURL = URL(fileURLWithPath: sourcePath)
+            if FileManager.default.fileExists(atPath: destinationURL.path) {
+                try FileManager.default.removeItem(at: destinationURL)
+            }
+            try FileManager.default.copyItem(at: sourceURL, to: destinationURL)
+            appState.auditLogger.log(.backup, detail: "Vault exported to \(destinationURL.lastPathComponent)")
+            vaultExportMessage = "Vault exported successfully."
+        } catch {
+            vaultExportMessage = "Export failed: \(error.localizedDescription)"
         }
     }
 

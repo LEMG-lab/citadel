@@ -163,6 +163,8 @@ final class AppState {
         if !isLocked {
             try? save()  // Persist pending changes before switching
             lockVault()
+        } else {
+            releaseVaultLock() // Release any stale lock from a failed unlock attempt
         }
         vaultPath = info.path
         activeVaultName = info.name
@@ -268,6 +270,43 @@ final class AppState {
         return header.count == 8 && header.elementsEqual(kdbxMagic)
     }
 
+    // MARK: - Vault reset
+
+    /// Delete the current vault file and all its backups so the user can start fresh.
+    func resetCurrentVault() {
+        releaseVaultLock()
+        let fm = FileManager.default
+        // Delete the vault file and all .prev backups
+        let filesToDelete = [
+            vaultPath,
+            vaultPath + ".tmp",
+            vaultPath + ".prev",
+            vaultPath + ".prev2",
+            vaultPath + ".prev3",
+        ]
+        for file in filesToDelete {
+            try? fm.removeItem(atPath: file)
+        }
+        // Delete audit log
+        let auditLog = (vaultDirectory as NSString).appendingPathComponent("audit.log")
+        try? fm.removeItem(atPath: auditLog)
+        // Delete unlock failure counter
+        try? fm.removeItem(atPath: unlockFailuresPath)
+        // Remove from registry
+        vaultRegistry.remove(path: vaultPath)
+        // Unenroll biometrics for this vault
+        biometricManager.unenroll()
+        refreshBiometricState()
+        // Reset UI state
+        entries = []
+        recycledEntries = []
+        entryAlerts = [:]
+        selectedEntryID = nil
+        errorMessage = nil
+        expiredEntriesMessage = nil
+        isLocked = true
+    }
+
     // MARK: - Vault lifecycle
 
     func unlock(password: Data, keyfilePath: String? = nil) throws {
@@ -280,6 +319,7 @@ final class AppState {
         do {
             try engine.open(path: vaultPath, password: password, keyfilePath: keyfilePath)
         } catch {
+            releaseVaultLock()
             recordFailedUnlock()
             throw error
         }
@@ -303,9 +343,15 @@ final class AppState {
         let path = vaultPathOverride ?? vaultPath
         if vaultPathOverride == nil { try acquireVaultLock() }
         let eng = engine
-        try await Task.detached {
-            try eng.open(path: path, password: password, keyfilePath: keyfilePath)
-        }.value
+        do {
+            try await Task.detached {
+                try eng.open(path: path, password: password, keyfilePath: keyfilePath)
+            }.value
+        } catch {
+            if vaultPathOverride == nil { releaseVaultLock() }
+            recordFailedUnlock()
+            throw error
+        }
         currentPassword = password
         currentKeyfilePath = keyfilePath
         entries = try engine.listEntries()
@@ -668,6 +714,7 @@ final class AppState {
 
     /// Acquire an advisory lock on the vault file to prevent concurrent access.
     private func acquireVaultLock() throws {
+        releaseVaultLock() // Release any stale lock from a previous failed attempt
         let fd = open(vaultPath, O_RDONLY)
         guard fd >= 0 else { return } // File may not exist yet (create flow)
         let rc = flock(fd, LOCK_EX | LOCK_NB)

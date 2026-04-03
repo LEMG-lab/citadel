@@ -17,6 +17,7 @@ struct LockScreenView: View {
     @State private var emergencyPassword = ""
     @State private var emergencyVaultPassword = ""
     @State private var emergencyMessage: String?
+    @State private var showResetConfirmation = false
     @FocusState private var focusedField: Field?
 
     private enum Field: Hashable {
@@ -117,6 +118,15 @@ struct LockScreenView: View {
         } message: {
             Text("Create a new vault at \(appState.vaultPath)?")
         }
+        .alert(
+            "Reset Vault",
+            isPresented: $showResetConfirmation
+        ) {
+            Button("Delete Everything", role: .destructive) { resetVault() }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This will permanently delete the current vault and all its data. You will start fresh with a new vault.\n\nThis cannot be undone.")
+        }
     }
 
     // MARK: - Unlock Fields
@@ -202,6 +212,15 @@ struct LockScreenView: View {
                 .font(.system(size: 13))
                 .foregroundStyle(Color.citadelSecondary)
                 .buttonStyle(.plain)
+        }
+
+        if appState.vaultExists {
+            Button("Forgot password? Reset vault") {
+                showResetConfirmation = true
+            }
+            .font(.system(size: 11))
+            .foregroundStyle(Color.citadelTertiary)
+            .buttonStyle(.plain)
         }
 
         Divider()
@@ -421,6 +440,16 @@ struct LockScreenView: View {
     }
 
     // MARK: - Actions
+
+    private func resetVault() {
+        appState.resetCurrentVault()
+        password = ""
+        confirmPassword = ""
+        keyfilePath = nil
+        errorMessage = nil
+        isCreating = false
+        focusedField = .password
+    }
 
     private func unlock() {
         errorMessage = nil
