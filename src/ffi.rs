@@ -457,7 +457,6 @@ pub extern "C" fn vault_add_entry(
         let notes_s = unsafe { cstr_to_str(notes) };
         let otp_s = unsafe { cstr_to_str(otp_uri) };
         let group_s = unsafe { cstr_to_str(group) };
-        eprintln!("[Smaug-FFI] vault_add_entry — group_s='{}' group_ptr_null={}", group_s, group.is_null());
         let pw = unsafe { read_password(password_ptr, password_len) };
 
         match state.add_entry_full(title_s, username_s, &pw, url_s, notes_s, otp_s, group_s, expiry_time) {

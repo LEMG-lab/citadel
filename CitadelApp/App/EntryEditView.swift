@@ -728,7 +728,6 @@ struct EntryEditView: View {
 
     private func populateFields() {
         existingGroups = (try? appState.engine.listGroups()) ?? []
-        NSLog("[Smaug] populateFields — existingGroups=%@", existingGroups as NSArray)
         if case .edit(let entry) = mode {
             title = entry.title
             username = entry.username
@@ -764,7 +763,6 @@ struct EntryEditView: View {
 
     private func save() {
         errorMessage = nil
-        NSLog("[Smaug] save() called — group='%@' effectiveGroup='%@' existingGroups=%@", group, effectiveGroup, existingGroups as NSArray)
         do {
             let pwData = isSecureNote ? Data() : Data(password.utf8)
             let expiry: Date? = hasExpiry ? expiryDate : nil

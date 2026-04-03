@@ -384,6 +384,7 @@ final class AppState {
         autoLockManager?.start()
         auditLogger.log(.createVault)
         vaultRegistry.register(name: activeVaultName, path: vaultPath)
+        refreshBiometricState()
         statusBar?.refresh()
     }
 
@@ -407,6 +408,7 @@ final class AppState {
         autoLockManager?.start()
         auditLogger.log(.createVault)
         vaultRegistry.register(name: activeVaultName, path: vaultPath)
+        refreshBiometricState()
         statusBar?.refresh()
     }
 
@@ -495,9 +497,6 @@ final class AppState {
 
     func refreshEntries() throws {
         entries = try engine.listEntries()
-        for e in entries {
-            NSLog("[Smaug] entry loaded: title='%@' group='%@'", e.title, e.group)
-        }
         recycledEntries = (try? engine.listRecycledEntries()) ?? []
         computeEntryAlerts()
         statusBar?.refresh()
@@ -678,13 +677,6 @@ final class AppState {
     }
 
     // MARK: - Backup
-
-    func performBackup(to destination: URL) throws {
-        guard let pw = currentPassword else {
-            throw VaultError.internalError("no password available")
-        }
-        try BackupManager.backup(vaultPath: vaultPath, to: destination, password: pw, keyfilePath: currentKeyfilePath)
-    }
 
     /// Create a full encrypted backup bundle of all known vaults.
     func createFullBackup(backupPassword: String, destination: URL) throws {

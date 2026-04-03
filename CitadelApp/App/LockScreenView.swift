@@ -12,7 +12,6 @@ struct LockScreenView: View {
     @State private var showCreateConfirmation = false
     @State private var errorMessage: String?
     @State private var keyfilePath: String?
-    @State private var biometricAttempted = false
     @State private var showingEmergencyOpen = false
     @State private var emergencyPassword = ""
     @State private var emergencyVaultPassword = ""

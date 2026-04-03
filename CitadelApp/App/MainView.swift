@@ -269,7 +269,6 @@ struct MainView: View {
             Divider()
             Button("Receive Shared Entry\u{2026}") { showingReceiveShare = true }
             Divider()
-            Button("Backup Vault\u{2026}") { performBackup() }
             Button("Full Vault Backup\u{2026}") { showingFullBackup = true }
             Button("Verify Backup\u{2026}") { verifyBackup() }
             Button("Restore from Backup\u{2026}") { restoreBackup() }
@@ -669,21 +668,6 @@ struct MainView: View {
             importResultMessage = "Import failed."
         }
         showingImportResult = true
-    }
-
-    private func performBackup() {
-        let panel = NSSavePanel()
-        panel.title = "Save Vault Backup"
-        panel.nameFieldStringValue = "vault-backup.kdbx"
-        panel.canCreateDirectories = true
-        guard panel.runModal() == .OK, let url = panel.url else { return }
-        do {
-            try appState.performBackup(to: url)
-            backupResultMessage = "Backup saved and verified successfully."
-        } catch {
-            backupResultMessage = "Backup failed."
-        }
-        showingBackupResult = true
     }
 
     private func verifyBackup() {

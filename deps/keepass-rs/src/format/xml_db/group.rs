@@ -75,7 +75,6 @@ impl Group {
         custom_icons: &HashMap<Uuid, Vec<u8>>,
         inner_decryptor: &mut dyn Cipher,
     ) -> Result<(), UnprotectError> {
-        eprintln!("[Smaug-XML] deserialized group name: {:?} (bytes: {:?})", self.name, self.name.as_bytes());
         target.name = self.name;
         target.notes = self.notes;
         target.icon_id = self.icon_id;
